@@ -1498,4 +1498,38 @@ html[data-theme="light"] .nav-toggle{
   }
 }
 
+/* ================================
+   FIX: AI chat fixed height + internal scroll
+   ================================ */
+
+/* Fix the chat panel height so it never grows with messages */
+.ai-chat{
+  height: 520px;
+  max-height: 520px;
+}
+
+/* Ensure the messages area scrolls (works whether you use class or id) */
+.ai-chat-messages,
+#aiMessages{
+  flex: 1 1 auto;
+  min-height: 0;        /* IMPORTANT for flex + overflow */
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Keep the input row pinned to bottom */
+.ai-chat-input,
+#aiForm{
+  flex: 0 0 auto;
+}
+
+/* Mobile: slightly smaller fixed height */
+@media (max-width: 900px){
+  .ai-chat{
+    height: 380px;
+    max-height: 380px;
+  }
+}
+
+
 
