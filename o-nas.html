@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="cs" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>O nás | Malé Daně s.r.o.</title>
+  <meta name="description" content="O nás: náš kredit, certifikáty a tým Malé Daně s.r.o." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="styles.css" />
+
+  <style>
+    /* O nás – promo “facts bar” (lightweight, aligned with index cards) */
+    .facts-bar{
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: var(--radius);
+      border: 1px solid rgba(255,255,255,.12);
+      background: linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      box-shadow: var(--shadow2);
+    }
+    .facts-grid{
+      display:grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .fact{
+      display:flex;
+      gap: 10px;
+      align-items:flex-start;
+      padding: 10px 10px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.03);
+    }
+    .fact i{
+      margin-top: 2px;
+      opacity: .9;
+    }
+    .fact b{
+      display:block;
+      font-size: 0.95rem;
+      line-height: 1.15;
+      margin-bottom: 2px;
+    }
+    .fact span{
+      display:block;
+      color: var(--muted);
+      line-height: 1.35;
+      font-size: 0.92rem;
+    }
+
+    /* Light theme: even lighter, less shadow */
+    html[data-theme="light"] .facts-bar{
+      border-color: rgba(10,15,30,.10);
+      background: linear-gradient(135deg, rgba(10,15,30,.02), rgba(10,15,30,.01));
+      box-shadow: none;
+    }
+    html[data-theme="light"] .fact{
+      border-color: rgba(10,15,30,.10);
+      background: rgba(10,15,30,.015);
+    }
+
+    /* Responsive */
+    @media (max-width: 980px){
+      .facts-grid{grid-template-columns: repeat(2, 1fr);}
+    }
+    @media (max-width: 560px){
+      .facts-grid{grid-template-columns: 1fr;}
+    }
+  </style>
+</head>
+
+<body>
+  <a class="skip-link" href="#main">Přejít na obsah</a>
+
+  <header class="site-header" data-header>
+    <div class="container header-inner">
+      <a class="brand" href="index.html" aria-label="Malé Daně - Úvod">
+        <img class="brand-logo" src="https://maledane.cz/wp-content/uploads/2022/09/logo.png" alt="Malé Daně s.r.o." />
+      </a>
+
+      <nav class="nav" aria-label="Hlavní navigace" data-nav>
+
+        <button class="theme-toggle nav-item" type="button" aria-label="Přepnout motiv" data-theme-toggle>
+          <span class="theme-emoji" aria-hidden="true" data-theme-emoji>🌙</span>
+        </button>
+
+        <a href="index.html" class="nav-link">Úvod</a>
+        <a href="sluzby.html" class="nav-link">Služby</a>
+        
+        <a href="o-nas.html" class="nav-link is-active">O nás</a>
+        <a href="kontakt.html" class="nav-link">Kontakt</a>
+        <a href="poptavka.html" class="nav-cta">Poptávka</a>
+      </nav>
+
+      <button class="nav-toggle" type="button" aria-label="Otevřít menu" aria-expanded="false" data-nav-toggle>
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="page-hero">
+      <div class="container">
+      <div class="page-hero-inner">
+        <div>
+          <p class="eyebrow">O nás</p>
+          <h1>Staráme se o vaše daně již od roku 1992</h1>
+
+          <!-- 1) Kdo za tím stojí (moved directly under H1) -->
+          <article class="card" style="margin-top:16px">
+            <h3>Kdo za tím stojí</h3>
+            <p class="muted">
+              Ing. Ivana Malá stojí za vznikem společnosti MaléDaně s.r.o. jako nástupce firmy Ing. Ivana Malá.
+              Ve společnosti nadále pracuje a stará se o vaše daně.
+            </p>
+            <ul class="checklist">
+              <li>je absolventem Českého vysokého učení technického se specializací na ekonomiku</li>
+              <li>působí jako nezávislý daňový poradce a odborník na účetnictví</li>
+              <li>několik let pracovala jako externí pedagog</li>
+              <li>zajišťovala odborná školení pracovníků v oblasti účetnictví a daní</li>
+              <li>je daňový poradce Komory daňových poradců ČR</li>
+              <li>obdržela certifikát Bilanční účetní, udělen Bankovním institutem, a.s.</li>
+            </ul>
+            <div class="callout">
+              <p><strong>Daňový poradce je veden v Komoře daňových poradců ČR pod číslem osvědčení 2657.</strong></p>
+              <p class="muted small">Daňový poradce je přihlášen k etickému kodexu.</p>
+            </div>
+          </article>
+
+          <!-- 2) Co Vás určitě zaujme – lightweight horizontal facts bar -->
+          <div class="facts-bar" aria-label="Co Vás určitě zaujme">
+            <ul class="facts-grid">
+              <li class="fact">
+                <i class="fa-solid fa-receipt" aria-hidden="true"></i>
+                <div>
+                  <b>Účetnictví od 1.500 Kč</b>
+                  <span>/ měsíc</span>
+                </div>
+              </li>
+              <li class="fact">
+                <i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i>
+                <div>
+                  <b>Daňová evidence od 600 Kč</b>
+                  <span>/ měsíc</span>
+                </div>
+              </li>
+              <li class="fact">
+                <i class="fa-solid fa-shield-heart" aria-hidden="true"></i>
+                <div>
+                  <b>Poradenství zdarma</b>
+                  <span>pro stálé klienty</span>
+                </div>
+              </li>
+              <li class="fact">
+                <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i>
+                <div>
+                  <b>Digitalizace procesů</b>
+                  <span>účetnictví i daní</span>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <!-- 3) Náš kredit (authority block) -->
+          <article class="card" style="margin-top:16px">
+            <h2 class="h4">Náš kredit:</h2>
+            <p class="muted" style="margin-top:10px">
+              Daňový poradce stojí vždy na straně klienta a chrání jeho práva a oprávněné zájmy. Díky zákonným profesním standardům včetně profesní mlčenlivosti
+              nebo povinného pojištění se odlišuje od dalších poradenských profesí a svým klientům dává záruky, které nikdo jiný v oblasti daňového poradenství poskytnout nemůže.
+            </p>
+            <div class="divider"></div>
+            <p class="muted">
+              Garantem záruky precizně odvedené práce je členství v Komoře daňových poradců ČR. Komora má možnost v případě trvale špatné činnosti svých členů členství odebrat.
+              Zároveň komora zajišťuje trvalé vzdělávání svých členů. Jsme pojištěni dle zákona a případné škody je možné refundovat.
+            </p>
+            <a class="btn btn-secondary" href="sluzby.html#cenik">Orientační ceník</a>
+          </article>
+
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="kontakt.html">Kontakt</a>
+            <a class="btn btn-ghost" href="#tym">Náš tým</a>
+          </div>
+        </div>
+
+        <aside class="page-hero-card" aria-label="Rychlé informace">
+          <div class="portrait-wrap">
+            <img class="portrait" src="https://maledane.cz/wp-content/uploads/2022/10/ing-ivana-mala-1.png" alt="Ing. Ivana Malá" loading="lazy" />
+            <div class="portrait-glow" aria-hidden="true"></div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="mini-list">
+            <div class="mini-item">
+              <span class="mini-dot" aria-hidden="true"></span>
+              <span>Daňový poradce Komory daňových poradců ČR</span>
+            </div>
+            <div class="mini-item">
+              <span class="mini-dot" aria-hidden="true"></span>
+              <span>Certifikát Bilanční účetní (Bankovní institut, a.s.)</span>
+            </div>
+          </div>
+
+          <a class="btn btn-secondary btn-block" href="poptavka.html">Nezávazná poptávka</a>
+          <p class="muted small">Praha / Mukařov • +420 602 400 746</p>
+        </aside>
+      </div>
+    </div>
+
+      <div class="hero-bg" aria-hidden="true"></div>
+      <div class="hero-glow" aria-hidden="true"></div>
+      
+    </section>
+
+    <section class="section section-alt" id="certifikaty">
+      <div class="container">
+        <div class="section-head">
+          <h2>Naše certifikáty a osvědčení</h2>
+          <p class="section-sub">Profesní standardy, odpovědnost a transparentnost.</p>
+        </div>
+
+        <div class="cert-grid">
+          <a class="cert" href="https://maledane.cz/wp-content/uploads/2022/10/osvedceni.jpg" target="_blank" rel="noopener">
+            <img src="https://maledane.cz/wp-content/uploads/2022/10/osvedceni.jpg" alt="Osvědčení - Daňový poradce" loading="lazy" />
+          </a>
+          <a class="cert" href="https://maledane.cz/wp-content/uploads/2022/10/kodex.jpg" target="_blank" rel="noopener">
+            <img src="https://maledane.cz/wp-content/uploads/2022/10/kodex.jpg" alt="Etický kodex" loading="lazy" />
+          </a>
+          <a class="cert" href="https://maledane.cz/wp-content/uploads/2022/10/institut.jpg" target="_blank" rel="noopener">
+            <img src="https://maledane.cz/wp-content/uploads/2022/10/institut.jpg" alt="Certifikát Bilanční účetní" loading="lazy" />
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="tym">
+      <div class="container">
+        <div class="section-head">
+          <h2>Náš tým</h2>
+          <p class="section-sub">Kdo se o vás postará.</p>
+        </div>
+
+        <div class="team-grid">
+          <article class="team-card">
+            <div class="team-icon" aria-hidden="true"><i class="fa-solid fa-user-tie"></i></div>
+            <h3>Ing. Ivana Malá</h3>
+            <p class="muted">daňový poradce, zakladatelka společnosti MaléDaně s.r.o.</p>
+          </article>
+
+          <article class="team-card">
+            <div class="team-icon" aria-hidden="true"><i class="fa-solid fa-chart-pie"></i></div>
+            <h3>Ing. Jan Malý</h3>
+            <p class="muted">finanční účetní, analytik účetnictví, účetní poradce, spolumajitel a jednatel společnosti</p>
+          </article>
+
+          <article class="team-card">
+            <div class="team-icon" aria-hidden="true"><i class="fa-solid fa-briefcase"></i></div>
+            <h3>Mgr. Adriána Matisová</h3>
+            <p class="muted">finanční účetní, vedoucí kanceláře, spolumajitelka společnosti</p>
+          </article>
+
+          <article class="team-card">
+            <div class="team-icon" aria-hidden="true"><i class="fa-solid fa-people-group"></i></div>
+            <h3>Bc. Martin Malý</h3>
+            <p class="muted">specialista na mzdy a personalistiku, spolumajitel společnosti</p>
+          </article>
+
+          <article class="team-card">
+            <div class="team-icon" aria-hidden="true"><i class="fa-solid fa-file-invoice-dollar"></i></div>
+            <h3>Martina Pospíšilová</h3>
+            <p class="muted">finanční účetní</p>
+          </article>
+
+          <article class="team-card">
+            <div class="team-icon" aria-hidden="true"><i class="fa-solid fa-calculator"></i></div>
+            <h3>Mgr. Alena Mihalíková</h3>
+            <p class="muted">finanční účetní</p>
+          </article>
+        </div>
+
+        <div class="join">
+          <div class="join-copy">
+            <h3>Chcete být součástí našeho týmu?</h3>
+            <p class="muted">
+              Do našeho týmu hledáme šikovnou kolegyni nebo kolegu s dobrou znalostí finančního účetnictví.
+              Zašlete nám svoje CV nebo LinkedIn profil do mailu a my se vám ozveme.
+            </p>
+          </div>
+          <div class="join-actions">
+            <a class="btn btn-primary" href="mailto:info@maledane.cz">Poslat CV</a>
+            <a class="btn btn-ghost" href="kontakt.html">Kontakt</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="container cta-inner">
+        <div>
+          <h2>Zaujala vás naše nabídka služeb?</h2>
+          <p>Kontaktujte nás nebo nás poptejte</p>
+        </div>
+        <div class="cta-actions">
+          <a class="btn btn-primary" href="kontakt.html">Kontakt</a>
+          <a class="btn btn-ghost" href="poptavka.html">Poptávka</a>
+        </div>
+      </div>
+      <div class="cta-bg" aria-hidden="true"></div>
+    </section>
+  </main>
+
+  <div id="site-footer"></div>
+  <script src="footer-loader.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
