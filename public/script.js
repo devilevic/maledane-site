@@ -81,7 +81,7 @@
 })();
 
 /* ================================
-   AI Chat – memory + /api/chat
+   AI Chat – memory + STREAMING
 ================================ */
 (() => {
   const form = document.getElementById('aiForm');
@@ -91,7 +91,7 @@
   if (!form || !input || !messagesEl) return;
 
   const STORAGE_KEY = 'aiChatHistory_v1';
-  const MAX_TURNS = 8; // 8 turns = 16 messages (user+bot)
+  const MAX_TURNS = 8; // 8 turns = 16 messages (user+assistant)
   let isSending = false;
 
   // Load existing history (if any) and render it
@@ -111,68 +111,85 @@
     input.value = '';
     input.focus();
 
-    // Typing indicator
-    const typingEl = addMessage("", "bot", { isTyping: true });
-    typingEl.innerHTML = `<span class="ai-typing"><span></span><span></span><span></span></span>`;
+    // Typing indicator (animated dots)
+    const typingEl = addMessage('', 'bot', { isTyping: true });
+    typingEl.innerHTML =
+      '<span class="ai-typing"><span></span><span></span><span></span></span>';
 
     isSending = true;
     input.disabled = true;
 
     try {
-      const payload = {
-        // send a trimmed window of messages to keep cost low
-        messages: getRecentHistoryForRequest()
-      };
+      const r = await fetch('/api/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: getRecentHistoryForRequest() })
+      });
 
-const r = await fetch("/api/chat/stream", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ messages: getRecentHistoryForRequest() })
-});
+      if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
 
-if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
+      let started = false;
+      let full = '';
 
-// First chunk arrives -> remove dots and start writing text
-let started = false;
-let full = "";
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
 
-const reader = r.body.getReader();
-const decoder = new TextDecoder("utf-8");
-let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
 
-while (true) {
-  const { value, done } = await reader.read();
-  if (done) break;
+        buffer += decoder.decode(value, { stream: true });
 
-  buffer += decoder.decode(value, { stream: true });
+        // SSE events separated by blank line
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
 
-  // Parse SSE: events are separated by double newline
-  const parts = buffer.split("\n\n");
-  buffer = parts.pop() || "";
+        for (const part of parts) {
+          const line = part.split('\n').find((l) => l.startsWith('data: '));
+          if (!line) continue;
 
-  for (const part of parts) {
-    const line = part.split("\n").find(l => l.startsWith("data: "));
-    if (!line) continue;
+          const payload = JSON.parse(line.slice(6));
 
-    const payload = JSON.parse(line.slice(6));
+          if (payload.delta) {
+            if (!started) {
+              started = true;
+              typingEl.textContent = ''; // remove dots
+            }
+            full += payload.delta;
+            typingEl.textContent = full;
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+          }
 
-    if (payload.delta) {
-      if (!started) {
-        started = true;
-        typingEl.textContent = ""; // remove dots
+          if (payload.done) {
+            const finalText = (full || typingEl.textContent || '').trim();
+            if (finalText) {
+              pushToHistory({ role: 'assistant', content: finalText });
+            }
+          }
+
+          if (payload.error) {
+            throw new Error(payload.error);
+          }
+        }
       }
-      full += payload.delta;
-      typingEl.textContent = full;
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
 
-    if (payload.done) {
-      // save assistant reply to memory (your existing pushToHistory)
-      if (full.trim()) pushToHistory({ role: "assistant", content: full.trim() });
-      else pushToHistory({ role: "assistant", content: typingEl.textContent.trim() });
+      // If stream ended without "done", still save what we have
+      const finalText = (full || typingEl.textContent || '').trim();
+      if (finalText && !historyHasLastAssistant(finalText)) {
+        pushToHistory({ role: 'assistant', content: finalText });
+      }
+    } catch (err) {
+      console.error('Chat request failed:', err);
+      typingEl.textContent =
+        'Omlouvám se, teď se mi nepodařilo odpovědět. Zkuste to prosím znovu, nebo nám napište přes Kontakt.';
+      pushToHistory({ role: 'assistant', content: typingEl.textContent });
+    } finally {
+      isSending = false;
+      input.disabled = false;
+      input.focus();
     }
-  }
-}
+  });
 
   function addMessage(text, type, opts = {}) {
     const div = document.createElement('div');
@@ -191,7 +208,6 @@ while (true) {
       const raw = localStorage.getItem(STORAGE_KEY);
       const parsed = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(parsed)) return [];
-      // sanitize
       return parsed
         .filter(
           (m) =>
@@ -209,14 +225,13 @@ while (true) {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
     } catch {
-      // ignore storage failures (private mode etc.)
+      // ignore storage failures
     }
   }
 
   function pushToHistory(msg) {
     history.push(msg);
 
-    // Keep last MAX_TURNS turns (user+assistant = 2 msgs per turn)
     const maxMessages = MAX_TURNS * 2;
     if (history.length > maxMessages) {
       history = history.slice(history.length - maxMessages);
@@ -226,8 +241,6 @@ while (true) {
   }
 
   function getRecentHistoryForRequest() {
-    // Return only last MAX_TURNS turns; already trimmed in pushToHistory,
-    // but keep it explicit + safe.
     const maxMessages = MAX_TURNS * 2;
     return history.slice(-maxMessages);
   }
@@ -237,5 +250,14 @@ while (true) {
     hist.forEach((m) => {
       addMessage(m.content, m.role === 'user' ? 'user' : 'bot');
     });
+  }
+
+  function historyHasLastAssistant(text) {
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].role === 'assistant') {
+        return history[i].content === text;
+      }
+    }
+    return false;
   }
 })();
