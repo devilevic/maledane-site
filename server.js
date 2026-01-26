@@ -3,6 +3,10 @@ import path from "path";
 import { fileURLToPath } from "url";
 import OpenAI from "openai";
 
+// NEW: SQLite (persistent disk on Render)
+import sqlite3 from "sqlite3";
+import { open } from "sqlite";
+
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,6 +19,371 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // Health check
 app.get("/health", (req, res) => res.status(200).send("ok"));
+
+/* ================================
+   DATABASE (SQLite on /var/data)
+   ================================ */
+
+const DB_PATH = process.env.DB_PATH || "/var/data/maledane.db";
+let db;
+
+async function initDb() {
+  db = await open({
+    filename: DB_PATH,
+    driver: sqlite3.Database
+  });
+
+  // Better concurrency for SQLite
+  await db.exec("PRAGMA journal_mode = WAL;");
+  await db.exec("PRAGMA foreign_keys = ON;");
+
+  // Kontakt form submissions
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS kontakt_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone TEXT,
+      topic TEXT,
+      message TEXT NOT NULL,
+      payload_json TEXT
+    );
+  `);
+
+  // Poptavka form submissions
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS poptavky (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      full_name TEXT NOT NULL,
+      company TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      vat TEXT,
+      message TEXT NOT NULL,
+      payload_json TEXT
+    );
+  `);
+
+  console.log(`✅ SQLite ready at ${DB_PATH}`);
+}
+
+function requireDb(req, res) {
+  if (!db) {
+    res.status(503).json({ error: "DB not ready yet" });
+    return false;
+  }
+  return true;
+}
+
+/* ================================
+   BASIC AUTH (Admin)
+   ================================ */
+
+function parseBasicAuth(header) {
+  // header: "Basic base64(user:pass)"
+  if (!header || !header.startsWith("Basic ")) return null;
+  const b64 = header.slice(6);
+  let decoded = "";
+  try {
+    decoded = Buffer.from(b64, "base64").toString("utf8");
+  } catch {
+    return null;
+  }
+  const idx = decoded.indexOf(":");
+  if (idx < 0) return null;
+  return {
+    user: decoded.slice(0, idx),
+    pass: decoded.slice(idx + 1)
+  };
+}
+
+function requireAdmin(req, res, next) {
+  const ADMIN_USER = process.env.ADMIN_USER || "";
+  const ADMIN_PASS = process.env.ADMIN_PASS || "";
+
+  // If not configured, block access
+  if (!ADMIN_USER || !ADMIN_PASS) {
+    return res.status(403).send("Admin is not configured.");
+  }
+
+  const creds = parseBasicAuth(req.headers.authorization);
+  if (!creds || creds.user !== ADMIN_USER || creds.pass !== ADMIN_PASS) {
+    res.setHeader("WWW-Authenticate", 'Basic realm="Admin"');
+    return res.status(401).send("Authentication required.");
+  }
+  next();
+}
+
+/* ================================
+   FORMS: SAVE TO DATABASE
+   ================================ */
+
+// Kontakt form -> DB
+app.post("/api/forms/kontakt", async (req, res) => {
+  try {
+    if (!requireDb(req, res)) return;
+
+    const body = req.body || {};
+    const name = (body.name || "").toString().trim();
+    const email = (body.email || "").toString().trim();
+    const phone = (body.phone || "").toString().trim();
+    const topic = (body.topic || "").toString().trim();
+    const message = (body.message || "").toString().trim();
+
+    if (!name || !email || !message) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const payload_json = JSON.stringify(body);
+
+    const result = await db.run(
+      `
+      INSERT INTO kontakt_messages (name, email, phone, topic, message, payload_json)
+      VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      [name, email, phone || null, topic || null, message, payload_json]
+    );
+
+    res.json({ success: true, id: result.lastID });
+  } catch (err) {
+    console.error("Kontakt save error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Poptavka form -> DB
+app.post("/api/forms/poptavka", async (req, res) => {
+  try {
+    if (!requireDb(req, res)) return;
+
+    const body = req.body || {};
+    const fullName = (body.fullName || "").toString().trim();
+    const company = (body.company || "").toString().trim();
+    const email = (body.email || "").toString().trim();
+    const phone = (body.phone || "").toString().trim();
+    const vat = (body.vat || "").toString().trim();
+    const message = (body.message || "").toString().trim();
+
+    if (!fullName || !company || !email || !phone || !message) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const payload_json = JSON.stringify(body);
+
+    const result = await db.run(
+      `
+      INSERT INTO poptavky (full_name, company, email, phone, vat, message, payload_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      [fullName, company, email, phone, vat || null, message, payload_json]
+    );
+
+    res.json({ success: true, id: result.lastID });
+  } catch (err) {
+    console.error("Poptavka save error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/* ================================
+   ADMIN: VIEW + DELETE
+   ================================ */
+
+// Admin page (served by server, not from /public, so it can be protected)
+app.get("/admin", requireAdmin, (req, res) => {
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(`
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin | Malé Daně</title>
+  <style>
+    body{font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial; margin:20px; color:#0f172a;}
+    h1{margin:0 0 14px;}
+    .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px;}
+    button{border:1px solid #cbd5e1; background:#fff; padding:8px 10px; border-radius:10px; cursor:pointer;}
+    button:hover{background:#f8fafc;}
+    table{width:100%; border-collapse:collapse; margin-top:10px;}
+    th,td{border-bottom:1px solid #e2e8f0; padding:10px 8px; text-align:left; vertical-align:top; font-size:14px;}
+    th{font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:#475569;}
+    .muted{color:#64748b; font-size:12px;}
+    .danger{border-color:#fecaca;}
+    .danger:hover{background:#fff1f2;}
+    .grid{display:grid; grid-template-columns: 1fr; gap:22px;}
+    @media(min-width: 980px){ .grid{grid-template-columns: 1fr 1fr;} }
+    pre{white-space:pre-wrap; word-break:break-word; margin:0;}
+  </style>
+</head>
+<body>
+  <h1>Admin</h1>
+  <div class="row">
+    <button id="refresh">Obnovit</button>
+    <span class="muted">Tip: /admin je chráněný Basic Auth (ADMIN_USER / ADMIN_PASS)</span>
+  </div>
+
+  <div class="grid">
+    <section>
+      <h2>Kontakt</h2>
+      <div id="kontakt"></div>
+    </section>
+    <section>
+      <h2>Poptávky</h2>
+      <div id="poptavka"></div>
+    </section>
+  </div>
+
+<script>
+async function fetchJson(url, opts){
+  const r = await fetch(url, opts);
+  if(!r.ok) throw new Error("HTTP " + r.status);
+  return await r.json();
+}
+
+function renderTable(el, rows, type){
+  if(!rows.length){
+    el.innerHTML = '<p class="muted">Žádná data.</p>';
+    return;
+  }
+
+  el.innerHTML = \`
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Datum</th>
+          <th>Kontakt</th>
+          <th>Zpráva</th>
+          <th>Akce</th>
+        </tr>
+      </thead>
+      <tbody>
+        \${rows.map(r => \`
+          <tr>
+            <td>\${r.id}</td>
+            <td><span class="muted">\${r.created_at}</span></td>
+            <td>
+              <div><b>\${escapeHtml(r.name || r.full_name || "")}</b></div>
+              <div class="muted">\${escapeHtml(r.email || "")}</div>
+              <div class="muted">\${escapeHtml(r.phone || "")}</div>
+              \${r.company ? '<div class="muted">' + escapeHtml(r.company) + '</div>' : ''}
+              \${r.topic ? '<div class="muted">' + escapeHtml(r.topic) + '</div>' : ''}
+              \${r.vat ? '<div class="muted">DPH: ' + escapeHtml(r.vat) + '</div>' : ''}
+            </td>
+            <td><pre>\${escapeHtml(r.message || "")}</pre></td>
+            <td>
+              <button class="danger" data-del="\${r.id}" data-type="\${type}">Smazat</button>
+            </td>
+          </tr>
+        \`).join("")}
+      </tbody>
+    </table>
+  \`;
+
+  el.querySelectorAll("button[data-del]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-del");
+      const t = btn.getAttribute("data-type");
+      if(!confirm("Opravdu smazat ID " + id + "?")) return;
+      await fetchJson("/api/admin/" + t + "/" + id, { method: "DELETE" });
+      await loadAll();
+    });
+  });
+}
+
+function escapeHtml(str){
+  return String(str)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+async function loadAll(){
+  const kontaktEl = document.getElementById("kontakt");
+  const poptEl = document.getElementById("poptavka");
+
+  kontaktEl.innerHTML = '<p class="muted">Načítám…</p>';
+  poptEl.innerHTML = '<p class="muted">Načítám…</p>';
+
+  const kontakt = await fetchJson("/api/admin/kontakt");
+  const poptavky = await fetchJson("/api/admin/poptavka");
+
+  renderTable(kontaktEl, kontakt.rows, "kontakt");
+  renderTable(poptEl, poptavky.rows, "poptavka");
+}
+
+document.getElementById("refresh").addEventListener("click", loadAll);
+loadAll();
+</script>
+</body>
+</html>
+  `);
+});
+
+app.get("/api/admin/kontakt", requireAdmin, async (req, res) => {
+  try {
+    if (!requireDb(req, res)) return;
+    const rows = await db.all(
+      `SELECT id, created_at, name, email, phone, topic, message
+       FROM kontakt_messages
+       ORDER BY id DESC
+       LIMIT 500`
+    );
+    res.json({ rows });
+  } catch (err) {
+    console.error("Admin kontakt list error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.get("/api/admin/poptavka", requireAdmin, async (req, res) => {
+  try {
+    if (!requireDb(req, res)) return;
+    const rows = await db.all(
+      `SELECT id, created_at, full_name, company, email, phone, vat, message
+       FROM poptavky
+       ORDER BY id DESC
+       LIMIT 500`
+    );
+    res.json({ rows });
+  } catch (err) {
+    console.error("Admin poptavka list error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.delete("/api/admin/kontakt/:id", requireAdmin, async (req, res) => {
+  try {
+    if (!requireDb(req, res)) return;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+
+    await db.run(`DELETE FROM kontakt_messages WHERE id = ?`, [id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Admin kontakt delete error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.delete("/api/admin/poptavka/:id", requireAdmin, async (req, res) => {
+  try {
+    if (!requireDb(req, res)) return;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+
+    await db.run(`DELETE FROM poptavky WHERE id = ?`, [id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Admin poptavka delete error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
 /* ================================
    AI CHAT ENDPOINT
@@ -327,6 +696,17 @@ Výzvu ke kontaktu přidáváme automaticky my.
    ================================ */
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+
+initDb()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error("❌ DB init failed:", err);
+    // still start server so site loads, but forms/admin will fail until fixed
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT} (DB FAILED)`);
+    });
+  });
