@@ -17,7 +17,7 @@
       <div class="footer-komora">
         <img
           class="kdp-logo"
-          src="https://maledane.cz/wp-content/uploads/2022/09/komora.png"
+          src="assets/imgkomora.webp"
           alt="Komora daňových poradců ČR"
           loading="lazy"
         />
