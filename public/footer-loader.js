@@ -66,7 +66,7 @@
   }
 
   // Try to load footer.html (works on http/https). If blocked (Chrome file://), use fallback.
-  fetch("footer.html", { cache: "no-store" })
+  fetch("/footer.html", { cache: "no-store" })
     .then((r) => {
       if (!r.ok) throw new Error("Footer fetch failed");
       return r.text();
