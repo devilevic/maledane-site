@@ -194,9 +194,11 @@
   function addMessage(text, type, opts = {}) {
     const div = document.createElement('div');
     div.className = `ai-msg ai-msg-${type}`;
-    div.textContent = text;
+    div[type === 'bot' ? 'innerHTML' : 'textContent'] = text;
 
-    if (opts.isTyping) div.setAttribute('aria-live', 'polite');
+    if (opts.isTyping) {
+      div.setAttribute('aria-live', 'polite');
+    }
 
     messagesEl.appendChild(div);
     messagesEl.scrollTop = messagesEl.scrollHeight;
