@@ -81,16 +81,22 @@
 })();
 
 /* ================================
-   AI Chat – connected to /api/chat
+   AI Chat – memory + /api/chat
 ================================ */
 (() => {
   const form = document.getElementById('aiForm');
   const input = document.getElementById('aiInput');
-  const messages = document.getElementById('aiMessages');
+  const messagesEl = document.getElementById('aiMessages');
 
-  if (!form || !input || !messages) return;
+  if (!form || !input || !messagesEl) return;
 
+  const STORAGE_KEY = 'aiChatHistory_v1';
+  const MAX_TURNS = 8; // 8 turns = 16 messages (user+bot)
   let isSending = false;
+
+  // Load existing history (if any) and render it
+  let history = loadHistory();
+  renderHistory(history);
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -99,37 +105,50 @@
     const text = input.value.trim();
     if (!text) return;
 
+    // Add user message to UI + memory
+    pushToHistory({ role: 'user', content: text });
     addMessage(text, 'user');
     input.value = '';
+    input.focus();
 
     // Typing indicator
     const typingEl = addMessage('…', 'bot', { isTyping: true });
 
     isSending = true;
+    input.disabled = true;
+
     try {
+      const payload = {
+        // send a trimmed window of messages to keep cost low
+        messages: getRecentHistoryForRequest()
+      };
+
       const r = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text })
+        body: JSON.stringify(payload)
       });
 
-      if (!r.ok) {
-        throw new Error(`HTTP ${r.status}`);
-      }
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
 
       const data = await r.json();
       const reply = (data?.reply || '').toString().trim();
 
       // Replace typing indicator with real reply
       typingEl.textContent =
-        reply ||
-        'Děkuji. Můžete prosím dotaz upřesnit?';
+        reply || 'Děkuji. Můžete prosím dotaz upřesnit?';
+
+      // Save bot message to memory
+      pushToHistory({ role: 'assistant', content: typingEl.textContent });
     } catch (err) {
       console.error('Chat request failed:', err);
       typingEl.textContent =
         'Omlouvám se, teď se mi nepodařilo odpovědět. Zkuste to prosím znovu, nebo nám napište přes Kontakt.';
+      pushToHistory({ role: 'assistant', content: typingEl.textContent });
     } finally {
       isSending = false;
+      input.disabled = false;
+      input.focus();
     }
   });
 
@@ -138,12 +157,63 @@
     div.className = `ai-msg ai-msg-${type}`;
     div.textContent = text;
 
-    if (opts.isTyping) {
-      div.setAttribute('aria-live', 'polite');
+    if (opts.isTyping) div.setAttribute('aria-live', 'polite');
+
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return div;
+  }
+
+  function loadHistory() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(parsed)) return [];
+      // sanitize
+      return parsed
+        .filter(
+          (m) =>
+            m &&
+            (m.role === 'user' || m.role === 'assistant') &&
+            typeof m.content === 'string'
+        )
+        .map((m) => ({ role: m.role, content: m.content.slice(0, 2000) }));
+    } catch {
+      return [];
+    }
+  }
+
+  function saveHistory() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+    } catch {
+      // ignore storage failures (private mode etc.)
+    }
+  }
+
+  function pushToHistory(msg) {
+    history.push(msg);
+
+    // Keep last MAX_TURNS turns (user+assistant = 2 msgs per turn)
+    const maxMessages = MAX_TURNS * 2;
+    if (history.length > maxMessages) {
+      history = history.slice(history.length - maxMessages);
     }
 
-    messages.appendChild(div);
-    messages.scrollTop = messages.scrollHeight;
-    return div;
+    saveHistory();
+  }
+
+  function getRecentHistoryForRequest() {
+    // Return only last MAX_TURNS turns; already trimmed in pushToHistory,
+    // but keep it explicit + safe.
+    const maxMessages = MAX_TURNS * 2;
+    return history.slice(-maxMessages);
+  }
+
+  function renderHistory(hist) {
+    messagesEl.innerHTML = '';
+    hist.forEach((m) => {
+      addMessage(m.content, m.role === 'user' ? 'user' : 'bot');
+    });
   }
 })();

@@ -26,12 +26,6 @@ const openai = new OpenAI({
 
 app.post("/api/chat", async (req, res) => {
   try {
-    const userMessage = (req.body?.message || "").toString().slice(0, 2000);
-
-    if (!userMessage.trim()) {
-      return res.status(400).json({ error: "Missing message" });
-    }
-
     const systemPrompt = `
 Jsi AI asistent účetní kanceláře Malé Daně (ČR).
 Odpovídej česky, stručně a srozumitelně.
@@ -40,12 +34,35 @@ Pokud je dotaz složitý nebo individuální, doporuč kontakt.
 Na závěr často nabídni: „Chcete, ať to probereme? Napište nám přes Kontakt.“
 `.trim();
 
+    const body = req.body || {};
+    let input = [];
+
+    // New: history mode
+    if (Array.isArray(body.messages) && body.messages.length) {
+      input = body.messages
+        .filter(
+          (m) =>
+            m &&
+            (m.role === "user" || m.role === "assistant") &&
+            typeof m.content === "string"
+        )
+        .slice(-16) // safety cap
+        .map((m) => ({
+          role: m.role === "assistant" ? "assistant" : "user",
+          content: m.content.toString().slice(0, 2000)
+        }));
+    } else {
+      // Backward compatible: single message mode
+      const userMessage = (body.message || "").toString().slice(0, 2000);
+      if (!userMessage.trim()) {
+        return res.status(400).json({ error: "Missing message(s)" });
+      }
+      input = [{ role: "user", content: userMessage }];
+    }
+
     const response = await openai.responses.create({
       model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
-      input: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage }
-      ],
+      input: [{ role: "system", content: systemPrompt }, ...input],
       max_output_tokens: 250
     });
 
