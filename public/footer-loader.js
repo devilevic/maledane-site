@@ -17,7 +17,7 @@
       <div class="footer-komora">
         <img
           class="kdp-logo"
-          src="assets/imgkomora.webp"
+          src="assets/img/komora.webp"
           alt="Komora daňových poradců ČR"
           loading="lazy"
         />
