@@ -24,12 +24,30 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
+/* ================================
+   CTA helper (organic + link)
+   ================================ */
+function getCTA() {
+  const kontakt = `<a href="/kontakt.html">Kontakt</a>`;
+  const variants = [
+    `Chcete, ať to probereme? Napište nám přes ${kontakt}.`,
+    `Pokud chcete řešit konkrétní případ, ozvěte se nám přes ${kontakt}.`,
+    `Rádi vám s tím pomůžeme individuálně — napište nám přes ${kontakt}.`,
+    `Máte konkrétní situaci? Napište nám přes ${kontakt} a probereme to.`,
+    `Pro individuální řešení se nám klidně ozvěte přes ${kontakt}.`
+  ];
+  return variants[Math.floor(Math.random() * variants.length)];
+}
+
 async function isInScope(messages) {
   const lastUser =
     [...messages].reverse().find((m) => m.role === "user")?.content || "";
 
   const gate = await openai.responses.create({
-    model: process.env.OPENAI_GUARD_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini",
+    model:
+      process.env.OPENAI_GUARD_MODEL ||
+      process.env.OPENAI_MODEL ||
+      "gpt-4.1-mini",
     input: [
       {
         role: "system",
@@ -64,7 +82,6 @@ Jsi AI asistent účetní kanceláře Malé Daně (ČR).
 Odpovídej česky, stručně a srozumitelně.
 Nevymýšlej daňová čísla, sazby ani termíny.
 Pokud je dotaz složitý nebo individuální, doporuč kontakt.
-Na závěr často nabídni: „Chcete, ať to probereme? Napište nám přes Kontakt.“
 `.trim();
 
     const body = req.body || {};
@@ -100,7 +117,7 @@ Na závěr často nabídni: „Chcete, ať to probereme? Napište nám přes Kon
         reply:
           "Děkuji za dotaz. Tento AI asistent odpovídá pouze na otázky z oblasti účetnictví, daní, mezd a souvisejících podnikatelských témat. " +
           "Pokud máte otázku k těmto službám, napište ji prosím konkrétně. " +
-          "Chcete, ať to probereme? Napište nám přes Kontakt."
+          getCTA()
       });
     }
 
@@ -114,7 +131,7 @@ Na závěr často nabídni: „Chcete, ať to probereme? Napište nám přes Kon
       response.output_text?.trim() ||
       "Děkuji za dotaz. Můžete jej prosím upřesnit?";
 
-    res.json({ reply });
+    res.json({ reply: `${reply} ${getCTA()}` });
   } catch (err) {
     console.error("Chat error:", err);
     res.status(500).json({ error: "Server error" });
@@ -128,7 +145,6 @@ Jsi AI asistent účetní kanceláře Malé Daně (ČR).
 Odpovídej česky, stručně a srozumitelně.
 Nevymýšlej daňová čísla, sazby ani termíny.
 Pokud je dotaz složitý nebo individuální, doporuč kontakt.
-Na závěr často nabídni: „Chcete, ať to probereme? Napište nám přes Kontakt.“
 `.trim();
 
     const body = req.body || {};
@@ -167,7 +183,7 @@ Na závěr často nabídni: „Chcete, ať to probereme? Napište nám přes Kon
       const msg =
         "Děkuji za dotaz. Tento AI asistent odpovídá pouze na otázky z oblasti účetnictví, daní, mezd a souvisejících podnikatelských témat. " +
         "Pokud máte otázku k těmto službám, napište ji prosím konkrétně. " +
-        "Chcete, ať to probereme? Napište nám přes Kontakt.";
+        getCTA();
 
       res.write(`data: ${JSON.stringify({ delta: msg })}\n\n`);
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
@@ -187,11 +203,16 @@ Na závěr často nabídni: „Chcete, ať to probereme? Napište nám přes Kon
       stream: true
     });
 
+    let full = "";
     for await (const event of stream) {
       if (event?.type === "response.output_text.delta" && event.delta) {
+        full += event.delta;
         res.write(`data: ${JSON.stringify({ delta: event.delta })}\n\n`);
       }
       if (event?.type === "response.completed") {
+        // append CTA at the end (as one final delta)
+        const cta = ` ${getCTA()}`;
+        res.write(`data: ${JSON.stringify({ delta: cta })}\n\n`);
         res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       }
       if (event?.type === "error") {
