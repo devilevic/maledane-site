@@ -98,7 +98,7 @@ Na závěr často nabídni: „Chcete, ať to probereme? Napište nám přes Kon
     if (!ok) {
       return res.json({
         reply:
-          "Děkuji za dotaz. Tento AI asistent odpovídá pouze na otázky z oblasti účetnictví, daní, mezd a souvisejících podnik_toggle]ataelských témat. " +
+          "Děkuji za dotaz. Tento AI asistent odpovídá pouze na otázky z oblasti účetnictví, daní, mezd a souvisejících podnikatelských témat. " +
           "Pokud máte otázku k těmto službám, napište ji prosím konkrétně. " +
           "Chcete, ať to probereme? Napište nám přes Kontakt."
       });
