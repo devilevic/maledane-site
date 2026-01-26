@@ -1557,5 +1557,39 @@ html[data-theme="light"] .nav-toggle{
   40% { transform: translateY(-3px); opacity: 0.95; }
 }
 
+/* ================================
+   AI chat – Kontakt link styling
+   ================================ */
+
+.ai-msg-bot a {
+  color: #1f6f4a;                 /* harmonious green */
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  position: relative;
+  padding-right: 14px;
+}
+
+/* Arrow after "Kontakt" */
+.ai-msg-bot a::after {
+  content: "→";
+  position: absolute;
+  right: 0;
+  top: 0;
+  font-size: 0.95em;
+  transition: transform 0.2s ease;
+}
+
+/* Hover effect (feels clickable, not aggressive) */
+.ai-msg-bot a:hover {
+  color: #155a3a;
+}
+
+.ai-msg-bot a:hover::after {
+  transform: translateX(3px);
+}
+
+
 
 
