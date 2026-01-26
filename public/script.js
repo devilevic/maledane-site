@@ -157,7 +157,7 @@
               typingEl.textContent = ''; // remove dots
             }
             full += payload.delta;
-            typingEl.textContent = full;
+            typingEl.innerHTML = full;
             messagesEl.scrollTop = messagesEl.scrollHeight;
           }
 
