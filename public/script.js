@@ -81,7 +81,7 @@
 })();
 
 /* ================================
-   AI Chat – frontend placeholder
+   AI Chat – connected to /api/chat
 ================================ */
 (() => {
   const form = document.getElementById('aiForm');
@@ -90,27 +90,60 @@
 
   if (!form || !input || !messages) return;
 
-  form.addEventListener('submit', (e) => {
+  let isSending = false;
+
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (isSending) return;
+
     const text = input.value.trim();
     if (!text) return;
 
     addMessage(text, 'user');
     input.value = '';
 
-    setTimeout(() => {
-      addMessage(
-        'Děkuji za dotaz. Tento asistent odpovídá výhradně na otázky týkající se účetnictví, daní, mezd a financí. Plná verze bude brzy dostupná.',
-        'bot'
-      );
-    }, 600);
+    // Typing indicator
+    const typingEl = addMessage('…', 'bot', { isTyping: true });
+
+    isSending = true;
+    try {
+      const r = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text })
+      });
+
+      if (!r.ok) {
+        throw new Error(`HTTP ${r.status}`);
+      }
+
+      const data = await r.json();
+      const reply = (data?.reply || '').toString().trim();
+
+      // Replace typing indicator with real reply
+      typingEl.textContent =
+        reply ||
+        'Děkuji. Můžete prosím dotaz upřesnit?';
+    } catch (err) {
+      console.error('Chat request failed:', err);
+      typingEl.textContent =
+        'Omlouvám se, teď se mi nepodařilo odpovědět. Zkuste to prosím znovu, nebo nám napište přes Kontakt.';
+    } finally {
+      isSending = false;
+    }
   });
 
-  function addMessage(text, type) {
+  function addMessage(text, type, opts = {}) {
     const div = document.createElement('div');
     div.className = `ai-msg ai-msg-${type}`;
     div.textContent = text;
+
+    if (opts.isTyping) {
+      div.setAttribute('aria-live', 'polite');
+    }
+
     messages.appendChild(div);
     messages.scrollTop = messages.scrollHeight;
+    return div;
   }
 })();
