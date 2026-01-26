@@ -70,7 +70,6 @@ Bez dalšího textu.
     const obj = JSON.parse(gate.output_text || "{}");
     return Boolean(obj.in_scope);
   } catch {
-    // If parsing fails, be conservative: treat as out-of-scope
     return false;
   }
 }
@@ -82,12 +81,14 @@ Jsi AI asistent účetní kanceláře Malé Daně (ČR).
 Odpovídej česky, stručně a srozumitelně.
 Nevymýšlej daňová čísla, sazby ani termíny.
 Pokud je dotaz složitý nebo individuální, doporuč kontakt.
+
+DŮLEŽITÉ: Na konci odpovědi NEPIŠ výzvu ke kontaktu ani slovo „Kontakt“.
+Výzvu ke kontaktu přidáváme automaticky my.
 `.trim();
 
     const body = req.body || {};
     let input = [];
 
-    // New: history mode
     if (Array.isArray(body.messages) && body.messages.length) {
       input = body.messages
         .filter(
@@ -96,13 +97,12 @@ Pokud je dotaz složitý nebo individuální, doporuč kontakt.
             (m.role === "user" || m.role === "assistant") &&
             typeof m.content === "string"
         )
-        .slice(-16) // safety cap
+        .slice(-16)
         .map((m) => ({
           role: m.role === "assistant" ? "assistant" : "user",
           content: m.content.toString().slice(0, 2000)
         }));
     } else {
-      // Backward compatible: single message mode
       const userMessage = (body.message || "").toString().slice(0, 2000);
       if (!userMessage.trim()) {
         return res.status(400).json({ error: "Missing message(s)" });
@@ -110,7 +110,6 @@ Pokud je dotaz složitý nebo individuální, doporuč kontakt.
       input = [{ role: "user", content: userMessage }];
     }
 
-    // Scope guard: politely refuse unrelated questions
     const ok = await isInScope(input);
     if (!ok) {
       return res.json({
@@ -145,6 +144,9 @@ Jsi AI asistent účetní kanceláře Malé Daně (ČR).
 Odpovídej česky, stručně a srozumitelně.
 Nevymýšlej daňová čísla, sazby ani termíny.
 Pokud je dotaz složitý nebo individuální, doporuč kontakt.
+
+DŮLEŽITÉ: Na konci odpovědi NEPIŠ výzvu ke kontaktu ani slovo „Kontakt“.
+Výzvu ke kontaktu přidáváme automaticky my.
 `.trim();
 
     const body = req.body || {};
@@ -171,10 +173,8 @@ Pokud je dotaz složitý nebo individuální, doporuč kontakt.
       input = [{ role: "user", content: userMessage }];
     }
 
-    // Reuse your existing scope guard
     const ok = await isInScope(input);
     if (!ok) {
-      // stream a single “out of scope” message as SSE then end
       res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
       res.setHeader("Cache-Control", "no-cache, no-transform");
       res.setHeader("Connection", "keep-alive");
@@ -190,7 +190,6 @@ Pokud je dotaz složitý nebo individuální, doporuč kontakt.
       return res.end();
     }
 
-    // SSE headers
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Connection", "keep-alive");
@@ -204,26 +203,31 @@ Pokud je dotaz složitý nebo individuální, doporuč kontakt.
     });
 
     let full = "";
+
     for await (const event of stream) {
       if (event?.type === "response.output_text.delta" && event.delta) {
         full += event.delta;
         res.write(`data: ${JSON.stringify({ delta: event.delta })}\n\n`);
       }
+
       if (event?.type === "response.completed") {
-        // append CTA at the end (as one final delta)
-        const cta = ` ${getCTA()}`;
-        res.write(`data: ${JSON.stringify({ delta: cta })}\n\n`);
+        const alreadyHasKontakt =
+          /\bkontakt\b/i.test(full) ||
+          /\/kontakt\.html/i.test(full);
+
+        if (!alreadyHasKontakt) {
+          res.write(
+            `data: ${JSON.stringify({ delta: " " + getCTA() })}\n\n`
+          );
+        }
+
         res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-      }
-      if (event?.type === "error") {
-        res.write(`data: ${JSON.stringify({ error: "stream_error" })}\n\n`);
       }
     }
 
     res.end();
   } catch (err) {
     console.error("Chat stream error:", err);
-    // if headers already sent, end SSE
     try {
       res.write(`data: ${JSON.stringify({ error: "server_error" })}\n\n`);
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
