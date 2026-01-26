@@ -1557,3 +1557,27 @@ html[data-theme="light"] .nav-toggle{
   40% { transform: translateY(-3px); opacity: 0.95; }
 }
 
+/* ================================
+   AI chat – assistant bubble color
+   (match light green bullets)
+   ================================ */
+
+.ai-msg-bot {
+  background: linear-gradient(
+    135deg,
+    rgba(180, 230, 205, 0.45),
+    rgba(200, 240, 220, 0.35)
+  );
+  border: 1px solid rgba(120, 190, 155, 0.35);
+  color: #1f3d2b; /* deep green text */
+}
+
+/* Optional: slightly stronger contrast in light theme */
+html[data-theme="light"] .ai-msg-bot {
+  background: linear-gradient(
+    135deg,
+    rgba(175, 225, 200, 0.55),
+    rgba(210, 245, 225, 0.45)
+  );
+}
+
