@@ -121,6 +121,96 @@ Na závěr často nabídni: „Chcete, ať to probereme? Napište nám přes Kon
   }
 });
 
+app.post("/api/chat/stream", async (req, res) => {
+  try {
+    const systemPrompt = `
+Jsi AI asistent účetní kanceláře Malé Daně (ČR).
+Odpovídej česky, stručně a srozumitelně.
+Nevymýšlej daňová čísla, sazby ani termíny.
+Pokud je dotaz složitý nebo individuální, doporuč kontakt.
+Na závěr často nabídni: „Chcete, ať to probereme? Napište nám přes Kontakt.“
+`.trim();
+
+    const body = req.body || {};
+    let input = [];
+
+    if (Array.isArray(body.messages) && body.messages.length) {
+      input = body.messages
+        .filter(
+          (m) =>
+            m &&
+            (m.role === "user" || m.role === "assistant") &&
+            typeof m.content === "string"
+        )
+        .slice(-16)
+        .map((m) => ({
+          role: m.role === "assistant" ? "assistant" : "user",
+          content: m.content.toString().slice(0, 2000)
+        }));
+    } else {
+      const userMessage = (body.message || "").toString().slice(0, 2000);
+      if (!userMessage.trim()) {
+        return res.status(400).json({ error: "Missing message(s)" });
+      }
+      input = [{ role: "user", content: userMessage }];
+    }
+
+    // Reuse your existing scope guard
+    const ok = await isInScope(input);
+    if (!ok) {
+      // stream a single “out of scope” message as SSE then end
+      res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache, no-transform");
+      res.setHeader("Connection", "keep-alive");
+      res.flushHeaders?.();
+
+      const msg =
+        "Děkuji za dotaz. Tento AI asistent odpovídá pouze na otázky z oblasti účetnictví, daní, mezd a souvisejících podnikatelských témat. " +
+        "Pokud máte otázku k těmto službám, napište ji prosím konkrétně. " +
+        "Chcete, ať to probereme? Napište nám přes Kontakt.";
+
+      res.write(`data: ${JSON.stringify({ delta: msg })}\n\n`);
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      return res.end();
+    }
+
+    // SSE headers
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders?.();
+
+    const stream = await openai.responses.create({
+      model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
+      input: [{ role: "system", content: systemPrompt }, ...input],
+      max_output_tokens: 250,
+      stream: true
+    });
+
+    for await (const event of stream) {
+      if (event?.type === "response.output_text.delta" && event.delta) {
+        res.write(`data: ${JSON.stringify({ delta: event.delta })}\n\n`);
+      }
+      if (event?.type === "response.completed") {
+        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      }
+      if (event?.type === "error") {
+        res.write(`data: ${JSON.stringify({ error: "stream_error" })}\n\n`);
+      }
+    }
+
+    res.end();
+  } catch (err) {
+    console.error("Chat stream error:", err);
+    // if headers already sent, end SSE
+    try {
+      res.write(`data: ${JSON.stringify({ error: "server_error" })}\n\n`);
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    } catch {}
+    res.end();
+  }
+});
+
 /* ================================
    START SERVER
    ================================ */

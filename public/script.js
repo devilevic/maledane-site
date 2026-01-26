@@ -112,7 +112,8 @@
     input.focus();
 
     // Typing indicator
-    const typingEl = addMessage('…', 'bot', { isTyping: true });
+    const typingEl = addMessage("", "bot", { isTyping: true });
+    typingEl.innerHTML = `<span class="ai-typing"><span></span><span></span><span></span></span>`;
 
     isSending = true;
     input.disabled = true;
@@ -123,34 +124,55 @@
         messages: getRecentHistoryForRequest()
       };
 
-      const r = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+const r = await fetch("/api/chat/stream", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ messages: getRecentHistoryForRequest() })
+});
 
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
 
-      const data = await r.json();
-      const reply = (data?.reply || '').toString().trim();
+// First chunk arrives -> remove dots and start writing text
+let started = false;
+let full = "";
 
-      // Replace typing indicator with real reply
-      typingEl.textContent =
-        reply || 'Děkuji. Můžete prosím dotaz upřesnit?';
+const reader = r.body.getReader();
+const decoder = new TextDecoder("utf-8");
+let buffer = "";
 
-      // Save bot message to memory
-      pushToHistory({ role: 'assistant', content: typingEl.textContent });
-    } catch (err) {
-      console.error('Chat request failed:', err);
-      typingEl.textContent =
-        'Omlouvám se, teď se mi nepodařilo odpovědět. Zkuste to prosím znovu, nebo nám napište přes Kontakt.';
-      pushToHistory({ role: 'assistant', content: typingEl.textContent });
-    } finally {
-      isSending = false;
-      input.disabled = false;
-      input.focus();
+while (true) {
+  const { value, done } = await reader.read();
+  if (done) break;
+
+  buffer += decoder.decode(value, { stream: true });
+
+  // Parse SSE: events are separated by double newline
+  const parts = buffer.split("\n\n");
+  buffer = parts.pop() || "";
+
+  for (const part of parts) {
+    const line = part.split("\n").find(l => l.startsWith("data: "));
+    if (!line) continue;
+
+    const payload = JSON.parse(line.slice(6));
+
+    if (payload.delta) {
+      if (!started) {
+        started = true;
+        typingEl.textContent = ""; // remove dots
+      }
+      full += payload.delta;
+      typingEl.textContent = full;
+      messagesEl.scrollTop = messagesEl.scrollHeight;
     }
-  });
+
+    if (payload.done) {
+      // save assistant reply to memory (your existing pushToHistory)
+      if (full.trim()) pushToHistory({ role: "assistant", content: full.trim() });
+      else pushToHistory({ role: "assistant", content: typingEl.textContent.trim() });
+    }
+  }
+}
 
   function addMessage(text, type, opts = {}) {
     const div = document.createElement('div');
