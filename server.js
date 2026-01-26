@@ -30,11 +30,11 @@ const openai = new OpenAI({
 function getCTA() {
   const kontakt = `<a href="/kontakt.html">Kontakt</a>`;
   const variants = [
-    `Chcete, ať to probereme? Napište nám přes ${kontakt}.`,
-    `Pokud chcete řešit konkrétní případ, ozvěte se nám přes ${kontakt}.`,
-    `Rádi vám s tím pomůžeme individuálně — napište nám přes ${kontakt}.`,
-    `Máte konkrétní situaci? Napište nám přes ${kontakt} a probereme to.`,
-    `Pro individuální řešení se nám klidně ozvěte přes ${kontakt}.`
+    `Chcete, ať to probereme? Napište nám přes ${kontakt}`,
+    `Pokud chcete řešit konkrétní případ, ozvěte se nám přes ${kontakt}`,
+    `Rádi vám s tím pomůžeme individuálně — napište nám přes ${kontakt}`,
+    `Máte konkrétní situaci? Napište nám přes ${kontakt} a probereme to`,
+    `Pro individuální řešení se nám klidně ozvěte přes ${kontakt}`
   ];
   return variants[Math.floor(Math.random() * variants.length)];
 }
