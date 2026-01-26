@@ -25,18 +25,84 @@ const openai = new OpenAI({
 });
 
 /* ================================
-   CTA helper (organic + link)
+   CTA helpers (organic + link + rules)
    ================================ */
-function getCTA() {
+
+function simpleHash(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = (h * 31 + str.charCodeAt(i)) >>> 0;
+  }
+  return h;
+}
+
+function countAssistantMessages(messages) {
+  return (messages || []).reduce(
+    (acc, m) => acc + (m?.role === "assistant" ? 1 : 0),
+    0
+  );
+}
+
+function getLastUserText(messages) {
+  const lastUser = [...(messages || [])]
+    .reverse()
+    .find((m) => m?.role === "user")?.content;
+  return (lastUser || "").toString();
+}
+
+// Valid answers: show CTA every 2–3 assistant replies (deterministic per chat)
+function shouldShowCTAValid(messages) {
+  const assistantCount = countAssistantMessages(messages); // how many assistant messages already in history
+  const lastUser = getLastUserText(messages);
+  const interval = 2 + (simpleHash(lastUser) % 2); // 2 or 3
+  const nextAssistantIndex = assistantCount + 1; // including the reply we are about to send
+  return nextAssistantIndex % interval === 0;
+}
+
+function getTone(messages) {
+  // "Exploring" early in the conversation
+  const assistantCount = countAssistantMessages(messages);
+  return assistantCount < 2 ? "soft" : "normal";
+}
+
+function alreadyMentionsKontakt(text) {
+  const t = (text || "").toString();
+  return /\bkontakt\b/i.test(t) || /\/kontakt\.html/i.test(t);
+}
+
+function getCTA({ kind = "valid", tone = "normal" } = {}) {
   const kontakt = `<a href="/kontakt.html">Kontakt</a>`;
-  const variants = [
-    `Chcete, ať to probereme? Napište nám přes ${kontakt}`,
-    `Pokud chcete řešit konkrétní případ, ozvěte se nám přes ${kontakt}`,
-    `Rádi vám s tím pomůžeme individuálně — napište nám přes ${kontakt}`,
-    `Máte konkrétní situaci? Napište nám přes ${kontakt} a probereme to`,
-    `Pro individuální řešení se nám klidně ozvěte přes ${kontakt}`
+
+  const validSoft = [
+    `Pokud budete chtít, můžete se nám ozvat přes ${kontakt}.`,
+    `Když budete potřebovat, napište nám přes ${kontakt}.`,
+    `Pro jistotu nám klidně napište přes ${kontakt}.`,
+    `Pokud chcete, probereme to spolu — ozvěte se přes ${kontakt}.`
   ];
-  return variants[Math.floor(Math.random() * variants.length)];
+
+  const validNormal = [
+    `Chcete to řešit konkrétně pro vás? Napište nám přes ${kontakt}.`,
+    `Rádi se na to podíváme individuálně — napište nám přes ${kontakt}.`,
+    `Máte konkrétní situaci? Napište nám přes ${kontakt} a probereme to.`,
+    `Pro individuální řešení se nám klidně ozvěte přes ${kontakt}.`
+  ];
+
+  const refusalSoft = [
+    `S tímto vám tady nepomohu, ale s účetnictvím, daněmi nebo mzdami ano. Napište nám přes ${kontakt}.`,
+    `Tento asistent je jen pro účetnictví/daně/mzdy. Pokud máte takový dotaz, ozvěte se přes ${kontakt}.`
+  ];
+
+  const refusalNormal = [
+    `Tento AI asistent odpovídá jen na účetnictví, daně a mzdy. Pokud máte dotaz k těmto službám, napište nám přes ${kontakt}.`,
+    `Mimo účetnictví/daně/mzdy bohužel neodpovídám. Pro konzultaci nám napište přes ${kontakt}.`
+  ];
+
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  if (kind === "refusal") {
+    return tone === "soft" ? pick(refusalSoft) : pick(refusalNormal);
+  }
+  return tone === "soft" ? pick(validSoft) : pick(validNormal);
 }
 
 async function isInScope(messages) {
@@ -70,6 +136,7 @@ Bez dalšího textu.
     const obj = JSON.parse(gate.output_text || "{}");
     return Boolean(obj.in_scope);
   } catch {
+    // If parsing fails, be conservative: treat as out-of-scope
     return false;
   }
 }
@@ -82,13 +149,15 @@ Odpovídej česky, stručně a srozumitelně.
 Nevymýšlej daňová čísla, sazby ani termíny.
 Pokud je dotaz složitý nebo individuální, doporuč kontakt.
 
-DŮLEŽITÉ: Na konci odpovědi NEPIŠ výzvu ke kontaktu ani slovo „Kontakt“.
+DŮLEŽITÉ:
+Na konci odpovědi NEPIŠ výzvu ke kontaktu ani slovo „Kontakt“ (žádné „napište přes Kontakt“ apod.).
 Výzvu ke kontaktu přidáváme automaticky my.
 `.trim();
 
     const body = req.body || {};
     let input = [];
 
+    // New: history mode
     if (Array.isArray(body.messages) && body.messages.length) {
       input = body.messages
         .filter(
@@ -97,12 +166,13 @@ Výzvu ke kontaktu přidáváme automaticky my.
             (m.role === "user" || m.role === "assistant") &&
             typeof m.content === "string"
         )
-        .slice(-16)
+        .slice(-16) // safety cap
         .map((m) => ({
           role: m.role === "assistant" ? "assistant" : "user",
           content: m.content.toString().slice(0, 2000)
         }));
     } else {
+      // Backward compatible: single message mode
       const userMessage = (body.message || "").toString().slice(0, 2000);
       if (!userMessage.trim()) {
         return res.status(400).json({ error: "Missing message(s)" });
@@ -110,13 +180,17 @@ Výzvu ke kontaktu přidáváme automaticky my.
       input = [{ role: "user", content: userMessage }];
     }
 
+    const tone = getTone(input);
+
+    // Scope guard: politely refuse unrelated questions
     const ok = await isInScope(input);
     if (!ok) {
+      const refusalCTA = getCTA({ kind: "refusal", tone: "soft" });
       return res.json({
         reply:
           "Děkuji za dotaz. Tento AI asistent odpovídá pouze na otázky z oblasti účetnictví, daní, mezd a souvisejících podnikatelských témat. " +
           "Pokud máte otázku k těmto službám, napište ji prosím konkrétně. " +
-          getCTA()
+          refusalCTA
       });
     }
 
@@ -130,7 +204,14 @@ Výzvu ke kontaktu přidáváme automaticky my.
       response.output_text?.trim() ||
       "Děkuji za dotaz. Můžete jej prosím upřesnit?";
 
-    res.json({ reply: `${reply} ${getCTA()}` });
+    // Valid answer CTA: only every 2–3 messages, softer early; never duplicate
+    let final = reply;
+    const showCTA = shouldShowCTAValid(input);
+    if (showCTA && !alreadyMentionsKontakt(final)) {
+      final = `${final} ${getCTA({ kind: "valid", tone })}`;
+    }
+
+    res.json({ reply: final });
   } catch (err) {
     console.error("Chat error:", err);
     res.status(500).json({ error: "Server error" });
@@ -145,7 +226,8 @@ Odpovídej česky, stručně a srozumitelně.
 Nevymýšlej daňová čísla, sazby ani termíny.
 Pokud je dotaz složitý nebo individuální, doporuč kontakt.
 
-DŮLEŽITÉ: Na konci odpovědi NEPIŠ výzvu ke kontaktu ani slovo „Kontakt“.
+DŮLEŽITÉ:
+Na konci odpovědi NEPIŠ výzvu ke kontaktu ani slovo „Kontakt“ (žádné „napište přes Kontakt“ apod.).
 Výzvu ke kontaktu přidáváme automaticky my.
 `.trim();
 
@@ -173,8 +255,12 @@ Výzvu ke kontaktu přidáváme automaticky my.
       input = [{ role: "user", content: userMessage }];
     }
 
+    const tone = getTone(input);
+
+    // Reuse your existing scope guard
     const ok = await isInScope(input);
     if (!ok) {
+      // stream a single “out of scope” message as SSE then end
       res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
       res.setHeader("Cache-Control", "no-cache, no-transform");
       res.setHeader("Connection", "keep-alive");
@@ -183,13 +269,14 @@ Výzvu ke kontaktu přidáváme automaticky my.
       const msg =
         "Děkuji za dotaz. Tento AI asistent odpovídá pouze na otázky z oblasti účetnictví, daní, mezd a souvisejících podnikatelských témat. " +
         "Pokud máte otázku k těmto službám, napište ji prosím konkrétně. " +
-        getCTA();
+        getCTA({ kind: "refusal", tone: "soft" });
 
       res.write(`data: ${JSON.stringify({ delta: msg })}\n\n`);
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       return res.end();
     }
 
+    // SSE headers
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Connection", "keep-alive");
@@ -203,31 +290,30 @@ Výzvu ke kontaktu přidáváme automaticky my.
     });
 
     let full = "";
-
     for await (const event of stream) {
       if (event?.type === "response.output_text.delta" && event.delta) {
         full += event.delta;
         res.write(`data: ${JSON.stringify({ delta: event.delta })}\n\n`);
       }
-
       if (event?.type === "response.completed") {
-        const alreadyHasKontakt =
-          /\bkontakt\b/i.test(full) ||
-          /\/kontakt\.html/i.test(full);
-
-        if (!alreadyHasKontakt) {
-          res.write(
-            `data: ${JSON.stringify({ delta: " " + getCTA() })}\n\n`
-          );
+        // Valid answer CTA: only every 2–3 messages; softer early; never duplicate
+        const showCTA = shouldShowCTAValid(input);
+        if (showCTA && !alreadyMentionsKontakt(full)) {
+          const cta = ` ${getCTA({ kind: "valid", tone })}`;
+          res.write(`data: ${JSON.stringify({ delta: cta })}\n\n`);
         }
 
         res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      }
+      if (event?.type === "error") {
+        res.write(`data: ${JSON.stringify({ error: "stream_error" })}\n\n`);
       }
     }
 
     res.end();
   } catch (err) {
     console.error("Chat stream error:", err);
+    // if headers already sent, end SSE
     try {
       res.write(`data: ${JSON.stringify({ error: "server_error" })}\n\n`);
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
