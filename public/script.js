@@ -52,7 +52,7 @@
       : 'dark';
 
   const savedTheme = localStorage.getItem('theme');
-  const initialTheme = savedTheme || getSystemTheme();
+  const initialTheme = savedTheme || 'light'; // default to LIGHT if nothing saved
 
   const applyTheme = (theme) => {
     html.setAttribute('data-theme', theme);
