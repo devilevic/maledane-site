@@ -3,7 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import OpenAI from "openai";
 
-// NEW: SQLite (persistent disk on Render)
+// SQLite
 import sqlite3 from "sqlite3";
 import { open } from "sqlite";
 
@@ -11,17 +11,13 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Parse JSON bodies (needed for chat + forms)
 app.use(express.json({ limit: "1mb" }));
-
-// Serve static site
 app.use(express.static(path.join(__dirname, "public")));
 
-// Health check
 app.get("/health", (req, res) => res.status(200).send("ok"));
 
 /* ================================
-   DATABASE (SQLite on /var/data)
+   DATABASE (SQLite on Render disk)
    ================================ */
 
 const DB_PATH = process.env.DB_PATH || "/var/data/maledane.db";
@@ -33,11 +29,9 @@ async function initDb() {
     driver: sqlite3.Database
   });
 
-  // Better concurrency for SQLite
   await db.exec("PRAGMA journal_mode = WAL;");
   await db.exec("PRAGMA foreign_keys = ON;");
 
-  // Kontakt form submissions
   await db.exec(`
     CREATE TABLE IF NOT EXISTS kontakt_messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,7 +45,6 @@ async function initDb() {
     );
   `);
 
-  // Poptavka form submissions
   await db.exec(`
     CREATE TABLE IF NOT EXISTS poptavky (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,7 +59,7 @@ async function initDb() {
     );
   `);
 
-  // NEW: Status columns for admin workflow (new / in_progress / done)
+  // Status columns (new / in_progress / done)
   async function ensureColumn(table, column, ddl) {
     const cols = await db.all(`PRAGMA table_info(${table});`);
     const exists = cols.some((c) => c.name === column);
@@ -74,7 +67,6 @@ async function initDb() {
       await db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl};`);
     }
   }
-
   await ensureColumn("kontakt_messages", "status", `status TEXT NOT NULL DEFAULT 'new'`);
   await ensureColumn("poptavky", "status", `status TEXT NOT NULL DEFAULT 'new'`);
 
@@ -94,7 +86,6 @@ function requireDb(req, res) {
    ================================ */
 
 function parseBasicAuth(header) {
-  // header: "Basic base64(user:pass)"
   if (!header || !header.startsWith("Basic ")) return null;
   const b64 = header.slice(6);
   let decoded = "";
@@ -105,17 +96,13 @@ function parseBasicAuth(header) {
   }
   const idx = decoded.indexOf(":");
   if (idx < 0) return null;
-  return {
-    user: decoded.slice(0, idx),
-    pass: decoded.slice(idx + 1)
-  };
+  return { user: decoded.slice(0, idx), pass: decoded.slice(idx + 1) };
 }
 
 function requireAdmin(req, res, next) {
   const ADMIN_USER = process.env.ADMIN_USER || "";
   const ADMIN_PASS = process.env.ADMIN_PASS || "";
 
-  // If not configured, block access
   if (!ADMIN_USER || !ADMIN_PASS) {
     return res.status(403).send("Admin is not configured.");
   }
@@ -132,7 +119,6 @@ function requireAdmin(req, res, next) {
    FORMS: SAVE TO DATABASE
    ================================ */
 
-// Kontakt form -> DB
 app.post("/api/forms/kontakt", async (req, res) => {
   try {
     if (!requireDb(req, res)) return;
@@ -165,7 +151,6 @@ app.post("/api/forms/kontakt", async (req, res) => {
   }
 });
 
-// Poptavka form -> DB
 app.post("/api/forms/poptavka", async (req, res) => {
   try {
     if (!requireDb(req, res)) return;
@@ -200,10 +185,9 @@ app.post("/api/forms/poptavka", async (req, res) => {
 });
 
 /* ================================
-   ADMIN: VIEW + DELETE
+   ADMIN: VIEW + STATUS + DELETE
    ================================ */
 
-// Admin page (served by server, not from /public, so it can be protected)
 app.get("/admin", requireAdmin, (req, res) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(`
@@ -219,6 +203,7 @@ app.get("/admin", requireAdmin, (req, res) => {
     .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px;}
     button{border:1px solid #cbd5e1; background:#fff; padding:8px 10px; border-radius:10px; cursor:pointer;}
     button:hover{background:#f8fafc;}
+    select{border:1px solid #cbd5e1; background:#fff; padding:8px 10px; border-radius:10px;}
     table{width:100%; border-collapse:collapse; margin-top:10px;}
     th,td{border-bottom:1px solid #e2e8f0; padding:10px 8px; text-align:left; vertical-align:top; font-size:14px;}
     th{font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:#475569;}
@@ -242,22 +227,52 @@ app.get("/admin", requireAdmin, (req, res) => {
     pre{white-space:pre-wrap; word-break:break-word; margin:0;}
     summary{cursor:pointer;}
     a{color:inherit;}
+    .section-head{display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between;}
+    .section-head h2{margin:0;}
+    .section-controls{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+    .pill{display:inline-block; padding:5px 10px; border-radius:999px; border:1px solid #e2e8f0; background:#f8fafc; font-size:12px; color:#334155;}
   </style>
 </head>
 <body>
   <h1>Admin</h1>
   <div class="row">
     <button id="refresh">Obnovit</button>
+    <button id="showAll" class="btn">Zobrazit vše</button>
     <span class="muted">Tip: /admin je chráněný Basic Auth (ADMIN_USER / ADMIN_PASS)</span>
   </div>
 
   <div class="grid">
     <section>
-      <h2>Kontakt</h2>
+      <div class="section-head">
+        <h2 id="kontaktTitle">Kontakt</h2>
+        <div class="section-controls">
+          <span class="pill" id="kontaktCounts">—</span>
+          <label class="muted">Filtr:</label>
+          <select id="kontaktFilter">
+            <option value="new" selected>Nové</option>
+            <option value="in_progress">Rozpracované</option>
+            <option value="done">Vyřízené</option>
+            <option value="all">Vše</option>
+          </select>
+        </div>
+      </div>
       <div id="kontakt"></div>
     </section>
+
     <section>
-      <h2>Poptávky</h2>
+      <div class="section-head">
+        <h2 id="poptTitle">Poptávky</h2>
+        <div class="section-controls">
+          <span class="pill" id="poptCounts">—</span>
+          <label class="muted">Filtr:</label>
+          <select id="poptFilter">
+            <option value="new" selected>Nové</option>
+            <option value="in_progress">Rozpracované</option>
+            <option value="done">Vyřízené</option>
+            <option value="all">Vše</option>
+          </select>
+        </div>
+      </div>
       <div id="poptavka"></div>
     </section>
   </div>
@@ -269,23 +284,50 @@ async function fetchJson(url, opts){
   return await r.json();
 }
 
-function renderTable(el, rows, type){
-  if(!rows.length){
-    el.innerHTML = '<p class="muted">Žádná data.</p>';
+function escapeHtml(str){
+  return String(str)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+function statusMeta(s){
+  const v = (s || "new");
+  if(v === "done") return { cls: "done", label: "Vyřízené" };
+  if(v === "in_progress") return { cls: "in_progress", label: "Rozpracované" };
+  return { cls: "new", label: "Nové" };
+}
+
+function previewText(txt, n=110){
+  const t = (txt || "").toString().replace(/\\s+/g, " ").trim();
+  if(t.length <= n) return t;
+  return t.slice(0, n - 1) + "…";
+}
+
+function countStatuses(rows){
+  const c = { all: rows.length, new: 0, in_progress: 0, done: 0 };
+  for(const r of rows){
+    const s = (r.status || "new");
+    if(s === "done") c.done++;
+    else if(s === "in_progress") c.in_progress++;
+    else c.new++;
+  }
+  return c;
+}
+
+function applyFilter(rows, filter){
+  if(filter === "all") return rows;
+  return rows.filter(r => (r.status || "new") === filter);
+}
+
+function renderTable(el, rows, type, filter){
+  const filtered = applyFilter(rows, filter);
+
+  if(!filtered.length){
+    el.innerHTML = '<p class="muted">Žádná data pro zvolený filtr.</p>';
     return;
-  }
-
-  function statusMeta(s){
-    const v = (s || "new");
-    if(v === "done") return { cls: "done", label: "Vyřízené" };
-    if(v === "in_progress") return { cls: "in_progress", label: "Rozpracované" };
-    return { cls: "new", label: "Nové" };
-  }
-
-  function previewText(txt, n=110){
-    const t = (txt || "").toString().replace(/\\s+/g, " ").trim();
-    if(t.length <= n) return t;
-    return t.slice(0, n - 1) + "…";
   }
 
   el.innerHTML = \`
@@ -301,7 +343,7 @@ function renderTable(el, rows, type){
         </tr>
       </thead>
       <tbody>
-        \${rows.map(r => {
+        \${filtered.map(r => {
           const s = statusMeta(r.status);
           const msg = (r.message || "");
           return \`
@@ -355,7 +397,6 @@ function renderTable(el, rows, type){
       const id = btn.getAttribute("data-id");
       const t = btn.getAttribute("data-type");
       const status = btn.getAttribute("data-status");
-
       await fetchJson(\`/api/admin/\${t}/\${id}/status\`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -366,13 +407,28 @@ function renderTable(el, rows, type){
   });
 }
 
-function escapeHtml(str){
-  return String(str)
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
+let cacheKontakt = [];
+let cachePopt = [];
+
+function updateHeadings(){
+  const kc = countStatuses(cacheKontakt);
+  const pc = countStatuses(cachePopt);
+
+  document.getElementById("kontaktCounts").textContent =
+    \`Nové: \${kc.new} / Rozprac: \${kc.in_progress} / Vyříz: \${kc.done} / Vše: \${kc.all}\`;
+
+  document.getElementById("poptCounts").textContent =
+    \`Nové: \${pc.new} / Rozprac: \${pc.in_progress} / Vyříz: \${pc.done} / Vše: \${pc.all}\`;
+}
+
+function rerender(){
+  const kontaktEl = document.getElementById("kontakt");
+  const poptEl = document.getElementById("poptavka");
+  const kf = document.getElementById("kontaktFilter").value;
+  const pf = document.getElementById("poptFilter").value;
+
+  renderTable(kontaktEl, cacheKontakt, "kontakt", kf);
+  renderTable(poptEl, cachePopt, "poptavka", pf);
 }
 
 async function loadAll(){
@@ -385,11 +441,23 @@ async function loadAll(){
   const kontakt = await fetchJson("/api/admin/kontakt");
   const poptavky = await fetchJson("/api/admin/poptavka");
 
-  renderTable(kontaktEl, kontakt.rows, "kontakt");
-  renderTable(poptEl, poptavky.rows, "poptavka");
+  cacheKontakt = kontakt.rows || [];
+  cachePopt = poptavky.rows || [];
+
+  updateHeadings();
+  rerender();
 }
 
 document.getElementById("refresh").addEventListener("click", loadAll);
+document.getElementById("kontaktFilter").addEventListener("change", rerender);
+document.getElementById("poptFilter").addEventListener("change", rerender);
+
+document.getElementById("showAll").addEventListener("click", () => {
+  document.getElementById("kontaktFilter").value = "all";
+  document.getElementById("poptFilter").value = "all";
+  rerender();
+});
+
 loadAll();
 </script>
 </body>
@@ -429,13 +497,11 @@ app.get("/api/admin/poptavka", requireAdmin, async (req, res) => {
   }
 });
 
-// Update status (Kontakt)
 app.patch("/api/admin/kontakt/:id/status", requireAdmin, async (req, res) => {
   try {
     if (!requireDb(req, res)) return;
     const id = Number(req.params.id);
     const status = (req.body?.status || "").toString().trim();
-
     const allowed = new Set(["new", "in_progress", "done"]);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
     if (!allowed.has(status)) return res.status(400).json({ error: "Bad status" });
@@ -448,13 +514,11 @@ app.patch("/api/admin/kontakt/:id/status", requireAdmin, async (req, res) => {
   }
 });
 
-// Update status (Poptávka)
 app.patch("/api/admin/poptavka/:id/status", requireAdmin, async (req, res) => {
   try {
     if (!requireDb(req, res)) return;
     const id = Number(req.params.id);
     const status = (req.body?.status || "").toString().trim();
-
     const allowed = new Set(["new", "in_progress", "done"]);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
     if (!allowed.has(status)) return res.status(400).json({ error: "Bad status" });
@@ -516,30 +580,23 @@ function simpleHash(str) {
 }
 
 function countAssistantMessages(messages) {
-  return (messages || []).reduce(
-    (acc, m) => acc + (m?.role === "assistant" ? 1 : 0),
-    0
-  );
+  return (messages || []).reduce((acc, m) => acc + (m?.role === "assistant" ? 1 : 0), 0);
 }
 
 function getLastUserText(messages) {
-  const lastUser = [...(messages || [])]
-    .reverse()
-    .find((m) => m?.role === "user")?.content;
+  const lastUser = [...(messages || [])].reverse().find((m) => m?.role === "user")?.content;
   return (lastUser || "").toString();
 }
 
-// Valid answers: show CTA every 2–3 assistant replies (deterministic per chat)
 function shouldShowCTAValid(messages) {
-  const assistantCount = countAssistantMessages(messages); // how many assistant messages already in history
+  const assistantCount = countAssistantMessages(messages);
   const lastUser = getLastUserText(messages);
-  const interval = 2 + (simpleHash(lastUser) % 2); // 2 or 3
-  const nextAssistantIndex = assistantCount + 1; // including the reply we are about to send
+  const interval = 2 + (simpleHash(lastUser) % 2);
+  const nextAssistantIndex = assistantCount + 1;
   return nextAssistantIndex % interval === 0;
 }
 
 function getTone(messages) {
-  // "Exploring" early in the conversation
   const assistantCount = countAssistantMessages(messages);
   return assistantCount < 2 ? "soft" : "normal";
 }
@@ -551,48 +608,35 @@ function alreadyMentionsKontakt(text) {
 
 function getCTA({ kind = "valid", tone = "normal" } = {}) {
   const kontakt = `<a href="/kontakt.html">Kontakt</a>`;
-
   const validSoft = [
     `Pokud budete chtít, můžete se nám ozvat přes ${kontakt}.`,
     `Když budete potřebovat, napište nám přes ${kontakt}.`,
     `Pro jistotu nám klidně napište přes ${kontakt}.`,
     `Pokud chcete, probereme to spolu — ozvěte se přes ${kontakt}.`
   ];
-
   const validNormal = [
     `Chcete to řešit konkrétně pro vás? Napište nám přes ${kontakt}.`,
     `Rádi se na to podíváme individuálně — napište nám přes ${kontakt}.`,
     `Máte konkrétní situaci? Napište nám přes ${kontakt} a probereme to.`,
     `Pro individuální řešení se nám klidně ozvěte přes ${kontakt}.`
   ];
-
   const refusalSoft = [
     `S tímto vám tady nepomohu, ale s účetnictvím, daněmi nebo mzdami ano. Napište nám přes ${kontakt}.`,
     `Tento asistent je jen pro účetnictví/daně/mzdy. Pokud máte takový dotaz, ozvěte se přes ${kontakt}.`
   ];
-
   const refusalNormal = [
     `Tento AI asistent odpovídá jen na účetnictví, daně a mzdy. Pokud máte dotaz k těmto službám, napište nám přes ${kontakt}.`,
     `Mimo účetnictví/daně/mzdy bohužel neodpovídám. Pro konzultaci nám napište přes ${kontakt}.`
   ];
-
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
-  if (kind === "refusal") {
-    return tone === "soft" ? pick(refusalSoft) : pick(refusalNormal);
-  }
+  if (kind === "refusal") return tone === "soft" ? pick(refusalSoft) : pick(refusalNormal);
   return tone === "soft" ? pick(validSoft) : pick(validNormal);
 }
 
 async function isInScope(messages) {
-  const lastUser =
-    [...messages].reverse().find((m) => m.role === "user")?.content || "";
-
+  const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content || "";
   const gate = await openai.responses.create({
-    model:
-      process.env.OPENAI_GUARD_MODEL ||
-      process.env.OPENAI_MODEL ||
-      "gpt-4.1-mini",
+    model: process.env.OPENAI_GUARD_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini",
     input: [
       {
         role: "system",
@@ -615,7 +659,6 @@ Bez dalšího textu.
     const obj = JSON.parse(gate.output_text || "{}");
     return Boolean(obj.in_scope);
   } catch {
-    // If parsing fails, be conservative: treat as out-of-scope
     return false;
   }
 }
@@ -636,32 +679,22 @@ Výzvu ke kontaktu přidáváme automaticky my.
     const body = req.body || {};
     let input = [];
 
-    // New: history mode
     if (Array.isArray(body.messages) && body.messages.length) {
       input = body.messages
-        .filter(
-          (m) =>
-            m &&
-            (m.role === "user" || m.role === "assistant") &&
-            typeof m.content === "string"
-        )
-        .slice(-16) // safety cap
+        .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+        .slice(-16)
         .map((m) => ({
           role: m.role === "assistant" ? "assistant" : "user",
           content: m.content.toString().slice(0, 2000)
         }));
     } else {
-      // Backward compatible: single message mode
       const userMessage = (body.message || "").toString().slice(0, 2000);
-      if (!userMessage.trim()) {
-        return res.status(400).json({ error: "Missing message(s)" });
-      }
+      if (!userMessage.trim()) return res.status(400).json({ error: "Missing message(s)" });
       input = [{ role: "user", content: userMessage }];
     }
 
     const tone = getTone(input);
 
-    // Scope guard: politely refuse unrelated questions
     const ok = await isInScope(input);
     if (!ok) {
       const refusalCTA = getCTA({ kind: "refusal", tone: "soft" });
@@ -679,11 +712,8 @@ Výzvu ke kontaktu přidáváme automaticky my.
       max_output_tokens: 250
     });
 
-    const reply =
-      response.output_text?.trim() ||
-      "Děkuji za dotaz. Můžete jej prosím upřesnit?";
+    const reply = response.output_text?.trim() || "Děkuji za dotaz. Můžete jej prosím upřesnit?";
 
-    // Valid answer CTA: only every 2–3 messages, softer early; never duplicate
     let final = reply;
     const showCTA = shouldShowCTAValid(input);
     if (showCTA && !alreadyMentionsKontakt(final)) {
@@ -697,110 +727,6 @@ Výzvu ke kontaktu přidáváme automaticky my.
   }
 });
 
-app.post("/api/chat/stream", async (req, res) => {
-  try {
-    const systemPrompt = `
-Jsi AI asistent účetní kanceláře Malé Daně (ČR).
-Odpovídej česky, stručně a srozumitelně.
-Nevymýšlej daňová čísla, sazby ani termíny.
-Pokud je dotaz složitý nebo individuální, doporuč kontakt.
-
-DŮLEŽITÉ:
-Na konci odpovědi NEPIŠ výzvu ke kontaktu ani slovo „Kontakt“ (žádné „napište přes Kontakt“ apod.).
-Výzvu ke kontaktu přidáváme automaticky my.
-`.trim();
-
-    const body = req.body || {};
-    let input = [];
-
-    if (Array.isArray(body.messages) && body.messages.length) {
-      input = body.messages
-        .filter(
-          (m) =>
-            m &&
-            (m.role === "user" || m.role === "assistant") &&
-            typeof m.content === "string"
-        )
-        .slice(-16)
-        .map((m) => ({
-          role: m.role === "assistant" ? "assistant" : "user",
-          content: m.content.toString().slice(0, 2000)
-        }));
-    } else {
-      const userMessage = (body.message || "").toString().slice(0, 2000);
-      if (!userMessage.trim()) {
-        return res.status(400).json({ error: "Missing message(s)" });
-      }
-      input = [{ role: "user", content: userMessage }];
-    }
-
-    const tone = getTone(input);
-
-    // Reuse your existing scope guard
-    const ok = await isInScope(input);
-    if (!ok) {
-      // stream a single “out of scope” message as SSE then end
-      res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-      res.setHeader("Cache-Control", "no-cache, no-transform");
-      res.setHeader("Connection", "keep-alive");
-      res.flushHeaders?.();
-
-      const msg =
-        "Děkuji za dotaz. Tento AI asistent odpovídá pouze na otázky z oblasti účetnictví, daní, mezd a souvisejících podnikatelských témat. " +
-        "Pokud máte otázku k těmto službám, napište ji prosím konkrétně. " +
-        getCTA({ kind: "refusal", tone: "soft" });
-
-      res.write(`data: ${JSON.stringify({ delta: msg })}\n\n`);
-      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-      return res.end();
-    }
-
-    // SSE headers
-    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-    res.setHeader("Cache-Control", "no-cache, no-transform");
-    res.setHeader("Connection", "keep-alive");
-    res.flushHeaders?.();
-
-    const stream = await openai.responses.create({
-      model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
-      input: [{ role: "system", content: systemPrompt }, ...input],
-      max_output_tokens: 250,
-      stream: true
-    });
-
-    let full = "";
-    for await (const event of stream) {
-      if (event?.type === "response.output_text.delta" && event.delta) {
-        full += event.delta;
-        res.write(`data: ${JSON.stringify({ delta: event.delta })}\n\n`);
-      }
-      if (event?.type === "response.completed") {
-        // Valid answer CTA: only every 2–3 messages; softer early; never duplicate
-        const showCTA = shouldShowCTAValid(input);
-        if (showCTA && !alreadyMentionsKontakt(full)) {
-          const cta = ` ${getCTA({ kind: "valid", tone })}`;
-          res.write(`data: ${JSON.stringify({ delta: cta })}\n\n`);
-        }
-
-        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-      }
-      if (event?.type === "error") {
-        res.write(`data: ${JSON.stringify({ error: "stream_error" })}\n\n`);
-      }
-    }
-
-    res.end();
-  } catch (err) {
-    console.error("Chat stream error:", err);
-    // if headers already sent, end SSE
-    try {
-      res.write(`data: ${JSON.stringify({ error: "server_error" })}\n\n`);
-      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-    } catch {}
-    res.end();
-  }
-});
-
 /* ================================
    START SERVER
    ================================ */
@@ -809,14 +735,9 @@ const PORT = process.env.PORT || 3000;
 
 initDb()
   .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   })
   .catch((err) => {
     console.error("❌ DB init failed:", err);
-    // still start server so site loads, but forms/admin will fail until fixed
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT} (DB FAILED)`);
-    });
+    app.listen(PORT, () => console.log(`Server running on port ${PORT} (DB FAILED)`));
   });
