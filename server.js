@@ -257,13 +257,21 @@ app.get("/admin", requireAdmin, (req, res) => {
     .panel-head{
       display:flex;
       align-items:center;
-      justify-content:space-between;
-      gap:10px;
+      justify-content:flex-start; /* was: space-between */
+      gap:12px;                  /* add */
       flex-wrap:wrap;
       margin-bottom:8px;
     }
+
+    .panel-controls{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+      margin-left:12px;          /* add: keeps it close to the title */
+    }
     .panel-head h2{margin:0;}
-    .panel-controls{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+
   </style>
 </head>
 <body>
