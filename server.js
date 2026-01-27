@@ -286,6 +286,42 @@ app.get("/admin", requireAdmin, (req, res) => {
       font-weight:700;
     }
     
+
+    /* --- Responsive admin table --- */
+    .table-wrap{
+      width:100%;
+      overflow-x:auto;
+      -webkit-overflow-scrolling: touch;
+      border-radius:12px;
+    }
+    table{ min-width: 980px; } /* prevents columns from collapsing too much */
+
+    .nowrap{
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      display:block;
+      max-width: 260px;
+    }
+
+    .msg-preview{
+      max-width: 320px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      display:block;
+    }
+
+    /* Mobile tweaks */
+    @media (max-width: 720px){
+      body{ margin:14px; }
+      th,td{ padding:8px 6px; }
+      .tab{ padding:8px 10px; }
+      .panel-head{ gap:10px; }
+      .panel-controls{ margin-left:0; }
+      .kv{ grid-template-columns: 72px 1fr; }
+    }
+
   </style>
 </head>
 <body>
@@ -435,13 +471,13 @@ function renderTable(el, rows, type, filter){
 
                 <div class="k">E-mail</div>
                 <div class="v">
-                  <a href="mailto:\${escapeHtml(r.email || "")}">\${escapeHtml(r.email || "")}</a>
+                  <a class="nowrap" href="mailto:\${escapeHtml(r.email || "")}">\${escapeHtml(r.email || "")}</a>
                 </div>
 
                 <div class="k">Telefon</div>
                 <div class="v">
                   \${r.phone
-                    ? \`<a href="tel:\${escapeHtml(r.phone)}">\${escapeHtml(r.phone)}</a>\`
+                    ? \`<a class="nowrap" href="tel:\${escapeHtml(r.phone)}">\${escapeHtml(r.phone)}</a>\`
                     : "—"
                   }
                 </div>
@@ -464,7 +500,7 @@ function renderTable(el, rows, type, filter){
             </td>
             <td>
               <details>
-                <summary class="muted">\${escapeHtml(previewText(msg))}</summary>
+                <summary class="muted"><span class="msg-preview">\${escapeHtml(previewText(msg))}</span></summary>
                 <pre>\${escapeHtml(msg)}</pre>
               </details>
             </td>
