@@ -222,15 +222,48 @@ app.get("/admin", requireAdmin, (req, res) => {
     .badge.in_progress{border-color:#93c5fd; background:#eff6ff;}
     .badge.done{border-color:#e2e8f0; background:#f1f5f9; color:#475569;}
     .actions{display:flex; gap:8px; flex-wrap:wrap;}
-    .grid{display:grid; grid-template-columns: 1fr; gap:22px;}
-    @media(min-width: 980px){ .grid{grid-template-columns: 1fr 1fr;} }
     pre{white-space:pre-wrap; word-break:break-word; margin:0;}
     summary{cursor:pointer;}
     a{color:inherit;}
-    .section-head{display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between;}
-    .section-head h2{margin:0;}
-    .section-controls{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
     .pill{display:inline-block; padding:5px 10px; border-radius:999px; border:1px solid #e2e8f0; background:#f8fafc; font-size:12px; color:#334155;}
+
+    /* Tabs */
+    .tabs{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:8px 0 16px;}
+    .tab{
+      padding:10px 12px;
+      border-radius:999px;
+      border:1px solid #cbd5e1;
+      background:#fff;
+      cursor:pointer;
+      display:flex; gap:8px; align-items:center;
+      font-size:14px;
+    }
+    .tab:hover{background:#f8fafc;}
+    .tab.active{
+      border-color:#86efac;
+      background:#ecfdf5;
+    }
+    .tab .count{
+      font-size:12px;
+      padding:3px 8px;
+      border-radius:999px;
+      border:1px solid #e2e8f0;
+      background:#fff;
+      color:#334155;
+    }
+    .panel{display:none;}
+    .panel.active{display:block;}
+
+    .panel-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-bottom:8px;
+    }
+    .panel-head h2{margin:0;}
+    .panel-controls{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
   </style>
 </head>
 <body>
@@ -241,41 +274,48 @@ app.get("/admin", requireAdmin, (req, res) => {
     <span class="muted">Tip: /admin je chráněný Basic Auth (ADMIN_USER / ADMIN_PASS)</span>
   </div>
 
-  <div class="grid">
-    <section>
-      <div class="section-head">
-        <h2 id="kontaktTitle">Kontakt</h2>
-        <div class="section-controls">
-          <span class="pill" id="kontaktCounts">—</span>
-          <label class="muted">Filtr:</label>
-          <select id="kontaktFilter">
-            <option value="new" selected>Nové</option>
-            <option value="in_progress">Rozpracované</option>
-            <option value="done">Vyřízené</option>
-            <option value="all">Vše</option>
-          </select>
-        </div>
-      </div>
-      <div id="kontakt"></div>
-    </section>
-
-    <section>
-      <div class="section-head">
-        <h2 id="poptTitle">Poptávky</h2>
-        <div class="section-controls">
-          <span class="pill" id="poptCounts">—</span>
-          <label class="muted">Filtr:</label>
-          <select id="poptFilter">
-            <option value="new" selected>Nové</option>
-            <option value="in_progress">Rozpracované</option>
-            <option value="done">Vyřízené</option>
-            <option value="all">Vše</option>
-          </select>
-        </div>
-      </div>
-      <div id="poptavka"></div>
-    </section>
+  <div class="tabs" role="tablist" aria-label="Admin sekce">
+    <button class="tab active" id="tab-kontakt" data-tab="kontakt" role="tab" aria-selected="true">
+      Kontakt <span class="count" id="tabCountKontakt">—</span>
+    </button>
+    <button class="tab" id="tab-poptavka" data-tab="poptavka" role="tab" aria-selected="false">
+      Poptávky <span class="count" id="tabCountPopt">—</span>
+    </button>
   </div>
+
+  <section class="panel active" id="panel-kontakt" role="tabpanel" aria-labelledby="tab-kontakt">
+    <div class="panel-head">
+      <h2>Kontakt</h2>
+      <div class="panel-controls">
+        <span class="pill" id="kontaktCounts">—</span>
+        <label class="muted">Filtr:</label>
+        <select id="kontaktFilter">
+          <option value="new" selected>Nové</option>
+          <option value="in_progress">Rozpracované</option>
+          <option value="done">Vyřízené</option>
+          <option value="all">Vše</option>
+        </select>
+      </div>
+    </div>
+    <div id="kontakt"></div>
+  </section>
+
+  <section class="panel" id="panel-poptavka" role="tabpanel" aria-labelledby="tab-poptavka">
+    <div class="panel-head">
+      <h2>Poptávky</h2>
+      <div class="panel-controls">
+        <span class="pill" id="poptCounts">—</span>
+        <label class="muted">Filtr:</label>
+        <select id="poptFilter">
+          <option value="new" selected>Nové</option>
+          <option value="in_progress">Rozpracované</option>
+          <option value="done">Vyřízené</option>
+          <option value="all">Vše</option>
+        </select>
+      </div>
+    </div>
+    <div id="poptavka"></div>
+  </section>
 
 <script>
 async function fetchJson(url, opts){
@@ -380,7 +420,6 @@ function renderTable(el, rows, type, filter){
     </table>
   \`;
 
-  // Delete
   el.querySelectorAll("button[data-del]").forEach(btn => {
     btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-del");
@@ -391,7 +430,6 @@ function renderTable(el, rows, type, filter){
     });
   });
 
-  // Status update
   el.querySelectorAll("button[data-status]").forEach(btn => {
     btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-id");
@@ -407,6 +445,24 @@ function renderTable(el, rows, type, filter){
   });
 }
 
+/* Tabs */
+const LS_TAB_KEY = "md_admin_active_tab";
+function setActiveTab(tab){
+  document.querySelectorAll(".tab").forEach(b => {
+    const isActive = b.dataset.tab === tab;
+    b.classList.toggle("active", isActive);
+    b.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+  document.querySelectorAll(".panel").forEach(p => {
+    p.classList.toggle("active", p.id === "panel-" + tab);
+  });
+  localStorage.setItem(LS_TAB_KEY, tab);
+}
+document.querySelectorAll(".tab").forEach(b => {
+  b.addEventListener("click", () => setActiveTab(b.dataset.tab));
+});
+setActiveTab(localStorage.getItem(LS_TAB_KEY) || "kontakt");
+
 let cacheKontakt = [];
 let cachePopt = [];
 
@@ -419,6 +475,10 @@ function updateHeadings(){
 
   document.getElementById("poptCounts").textContent =
     \`Nové: \${pc.new} / Rozprac: \${pc.in_progress} / Vyříz: \${pc.done} / Vše: \${pc.all}\`;
+
+  // Tab count badges show "new / all"
+  document.getElementById("tabCountKontakt").textContent = \`\${kc.new} / \${kc.all}\`;
+  document.getElementById("tabCountPopt").textContent = \`\${pc.new} / \${pc.all}\`;
 }
 
 function rerender(){
@@ -449,9 +509,11 @@ async function loadAll(){
 }
 
 document.getElementById("refresh").addEventListener("click", loadAll);
+
 document.getElementById("kontaktFilter").addEventListener("change", rerender);
 document.getElementById("poptFilter").addEventListener("change", rerender);
 
+// Show All affects BOTH filters (so switching tabs shows all too)
 document.getElementById("showAll").addEventListener("click", () => {
   document.getElementById("kontaktFilter").value = "all";
   document.getElementById("poptFilter").value = "all";
