@@ -257,21 +257,13 @@ app.get("/admin", requireAdmin, (req, res) => {
     .panel-head{
       display:flex;
       align-items:center;
-      justify-content:flex-start; /* was: space-between */
-      gap:12px;                  /* add */
+      justify-content:flex-start;
+      gap:12px;
       flex-wrap:wrap;
       margin-bottom:8px;
     }
-
-    .panel-controls{
-      display:flex;
-      gap:8px;
-      align-items:center;
-      flex-wrap:wrap;
-      margin-left:12px;          /* add: keeps it close to the title */
-    }
     .panel-head h2{margin:0;}
-
+    .panel-controls{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-left:12px;}
   </style>
 </head>
 <body>
@@ -373,7 +365,7 @@ function applyFilter(rows, filter){
 function formatDateTimeCZ(value){
   if(!value) return "";
   const d = new Date(value);
-  if(Number.isNaN(d.getTime())) return String(value); // fallback, kdyby to nebyl parsovatelný datum
+  if(Number.isNaN(d.getTime())) return String(value);
 
   const pad = (n) => String(n).padStart(2, "0");
   const dd = pad(d.getDate());
@@ -382,8 +374,8 @@ function formatDateTimeCZ(value){
   const hh = pad(d.getHours());
   const mi = pad(d.getMinutes());
 
-  return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
-}    
+  return dd + "/" + mm + "/" + yyyy + " " + hh + ":" + mi;
+}
 
 function renderTable(el, rows, type, filter){
   const filtered = applyFilter(rows, filter);
@@ -412,25 +404,25 @@ function renderTable(el, rows, type, filter){
           return \`
           <tr>
             <td>\${r.id}</td>
-            <td><span class="muted">${escapeHtml(formatDateTimeCZ(r.created_at))}</span></td>
+            <td><span class="muted">\${escapeHtml(formatDateTimeCZ(r.created_at))}</span></td>
             <td><span class="badge \${s.cls}">\${s.label}</span></td>
             <td>
-              <div><span class="muted">Jméno:</span> <b>${escapeHtml(r.name || r.full_name || "")}</b></div>
+              <div><span class="muted">Jméno:</span> <b>\${escapeHtml(r.name || r.full_name || "")}</b></div>
 
               <div class="muted">
-                E-mail: <a href="mailto:${escapeHtml(r.email || "")}">${escapeHtml(r.email || "")}</a>
+                E-mail: <a href="mailto:\${escapeHtml(r.email || "")}">\${escapeHtml(r.email || "")}</a>
               </div>
 
-              ${r.phone
-                ? `<div class="muted">Telefon: <a href="tel:${escapeHtml(r.phone)}">${escapeHtml(r.phone)}</a></div>`
-                : `<div class="muted">Telefon: —</div>`
+              \${r.phone
+                ? \`<div class="muted">Telefon: <a href="tel:\${escapeHtml(r.phone)}">\${escapeHtml(r.phone)}</a></div>\`
+                : \`<div class="muted">Telefon: —</div>\`
               }
 
-              ${r.company ? `<div class="muted">Firma: ${escapeHtml(r.company)}</div>` : ""}
+              \${r.company ? \`<div class="muted">Firma: \${escapeHtml(r.company)}</div>\` : ""}
 
-              ${r.topic ? `<div class="muted">Téma: ${escapeHtml(r.topic)}</div>` : ""}
+              \${r.topic ? \`<div class="muted">Téma: \${escapeHtml(r.topic)}</div>\` : ""}
 
-              ${r.vat ? `<div class="muted">DPH: ${escapeHtml(r.vat)}</div>` : ""}
+              \${r.vat ? \`<div class="muted">DPH: \${escapeHtml(r.vat)}</div>\` : ""}
             </td>
             <td>
               <details>
