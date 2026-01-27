@@ -535,181 +535,69 @@
   <script src="script.js"></script>
 
   <script>
-    (function () {
-      const STORAGE_KEY = "md_inquiry_submissions_v1";
+(function () {
+  const form = document.getElementById("inquiryForm");
+  const toast = document.getElementById("toast");
+  const clearBtn = document.getElementById("clearBtn");
 
-      const form = document.getElementById("inquiryForm");
-      const toast = document.getElementById("toast");
-      const clearBtn = document.getElementById("clearBtn");
+  function showToast(msg, isError = false) {
+    toast.textContent = msg;
+    toast.style.display = "block";
+    toast.style.borderColor = isError
+      ? "rgba(255,80,80,.35)"
+      : "rgba(0,210,255,.35)";
+    toast.style.background = isError
+      ? "rgba(255,80,80,.08)"
+      : "rgba(0,210,255,.08)";
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => (toast.style.display = "none"), 3500);
+  }
 
-      const submissionsWrap = document.getElementById("submissions");
-      const tbody = document.getElementById("submissionsBody");
-      const exportBtn = document.getElementById("exportBtn");
-      const wipeBtn = document.getElementById("wipeBtn");
+  clearBtn.addEventListener("click", () => {
+    form.reset();
+    showToast("Formulář vymazán.");
+  });
 
-      function nowISO(){ return new Date().toISOString(); }
-      function formatCZ(iso){
-        try{
-          const d = new Date(iso);
-          return d.toLocaleString("cs-CZ", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
-        } catch { return iso; }
-      }
-      function load(){
-        try{ return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }
-        catch{ return []; }
-      }
-      function save(rows){ localStorage.setItem(STORAGE_KEY, JSON.stringify(rows)); }
-      function showToast(msg){
-        toast.textContent = msg;
-        toast.style.display = "block";
-        clearTimeout(showToast._t);
-        showToast._t = setTimeout(() => (toast.style.display = "none"), 3200);
-      }
-      function escapeHtml(s){
-        return String(s ?? "")
-          .replaceAll("&","&amp;")
-          .replaceAll("<","&lt;")
-          .replaceAll(">","&gt;")
-          .replaceAll('"',"&quot;")
-          .replaceAll("'","&#039;");
-      }
+  function radioValue(name) {
+    const el = document.querySelector(`input[name="${name}"]:checked`);
+    return el ? el.value : "";
+  }
 
-      function getRadioValue(name){
-        const el = document.querySelector(`input[name="${name}"]:checked`);
-        return el ? el.value : "";
-      }
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-      function render(){
-        const rows = load();
-        if (!rows.length){
-          submissionsWrap.style.display = "none";
-          tbody.innerHTML = "";
-          return;
-        }
-        submissionsWrap.style.display = "block";
+    const data = {
+      fullName: document.getElementById("fullName").value.trim(),
+      company: document.getElementById("company").value.trim(),
+      email: document.getElementById("email").value.trim(),
+      phone: document.getElementById("phone").value.trim(),
+      vat: radioValue("vat"),
+      message: document.getElementById("message").value.trim()
+    };
 
-        tbody.innerHTML = rows.slice().reverse().map((r, idxFromEnd) => {
-          const idx = rows.length - 1 - idxFromEnd;
-          const msg = (r.message || "").trim();
-          const msgCell = escapeHtml(msg.length > 140 ? msg.slice(0,140) + "…" : msg);
+    const consent = document.getElementById("consent").checked;
 
-          return `
-            <tr>
-              <td><small>${escapeHtml(formatCZ(r.createdAt))}</small></td>
-              <td>${escapeHtml(r.fullName)}</td>
-              <td>${escapeHtml(r.company)}</td>
-              <td><a href="mailto:${escapeHtml(r.email)}">${escapeHtml(r.email)}</a></td>
-              <td><a href="tel:${escapeHtml(r.phone)}">${escapeHtml(r.phone)}</a></td>
-              <td><small>${escapeHtml(r.vat)}</small></td>
-              <td><small>${escapeHtml(r.employees)}</small></td>
-              <td><small>${escapeHtml(r.bankAccounts)}</small></td>
-              <td><small>${escapeHtml(r.bankItems)}</small></td>
-              <td><small>${escapeHtml(r.receivedInvoices)}</small></td>
-              <td><small>${escapeHtml(r.issuedInvoices)}</small></td>
-              <td><small>${escapeHtml(r.cashDocs)}</small></td>
-              <td><small>${escapeHtml(r.otherDocs)}</small></td>
-              <td>${msgCell}</td>
-              <td style="white-space:nowrap;">
-                <button class="btn btn-ghost" type="button" data-del="${idx}" title="Smazat">
-                  <i class="fa-solid fa-trash" aria-hidden="true"></i>
-                </button>
-              </td>
-            </tr>
-          `;
-        }).join("");
+    if (!data.fullName || !data.company || !data.email || !data.phone || !data.vat || !data.message || !consent) {
+      showToast("Vyplňte povinná pole a potvrďte souhlas.", true);
+      return;
+    }
 
-        tbody.querySelectorAll("[data-del]").forEach(btn => {
-          btn.addEventListener("click", () => {
-            const i = Number(btn.getAttribute("data-del"));
-            const rows = load();
-            rows.splice(i, 1);
-            save(rows);
-            render();
-            showToast("Poptávka byla smazána.");
-          });
-        });
-      }
-
-      function toCSV(rows){
-        const header = [
-          "createdAt","fullName","company","email","phone","vat",
-          "employees","bankAccounts","bankItems","receivedInvoices","issuedInvoices","cashDocs","otherDocs","message"
-        ];
-        const esc = (v) => `"${String(v ?? "").replaceAll('"','""')}"`;
-        return [
-          header.map(esc).join(","),
-          ...rows.map(r => header.map(k => esc(r[k])).join(","))
-        ].join("\n");
-      }
-      function download(filename, text){
-        const blob = new Blob([text], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      }
-
-      clearBtn.addEventListener("click", () => {
-        form.reset();
-        showToast("Formulář vymazán.");
+    try {
+      const res = await fetch("/api/forms/poptavka", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
       });
 
-      exportBtn.addEventListener("click", () => {
-        const rows = load();
-        if (!rows.length) return;
-        download("maledane-poptavky.csv", toCSV(rows));
-      });
+      if (!res.ok) throw new Error();
 
-      wipeBtn.addEventListener("click", () => {
-        if (!confirm("Smazat všechny uložené poptávky?")) return;
-        save([]);
-        render();
-        showToast("Všechny poptávky smazány.");
-      });
-
-      form.addEventListener("submit", (e) => {
-        e.preventDefault();
-
-        const fullName = document.getElementById("fullName").value.trim();
-        const company = document.getElementById("company").value.trim();
-        const email = document.getElementById("email").value.trim();
-        const phone = document.getElementById("phone").value.trim();
-        const vat = getRadioValue("vat");
-        const employees = document.getElementById("employees").value.trim();
-        const bankAccounts = document.getElementById("bankAccounts").value.trim();
-        const bankItems = document.getElementById("bankItems").value.trim();
-        const receivedInvoices = document.getElementById("receivedInvoices").value.trim();
-        const issuedInvoices = document.getElementById("issuedInvoices").value.trim();
-        const cashDocs = document.getElementById("cashDocs").value.trim();
-        const otherDocs = document.getElementById("otherDocs").value.trim();
-        const message = document.getElementById("message").value.trim();
-        const consent = document.getElementById("consent").checked;
-
-        if (!fullName || !company || !email || !phone || !vat || !message || !consent){
-          showToast("Vyplňte prosím povinná pole (včetně DPH) a potvrďte souhlas.");
-          return;
-        }
-
-        const rows = load();
-        rows.push({
-          createdAt: nowISO(),
-          fullName, company, email, phone, vat,
-          employees, bankAccounts, bankItems, receivedInvoices, issuedInvoices, cashDocs, otherDocs,
-          message
-        });
-        save(rows);
-
-        form.reset();
-        render();
-        showToast("Děkujeme! Poptávka byla odeslána.");
-      });
-
-      render();
-    })();
-  </script>
+      form.reset();
+      showToast("Děkujeme! Poptávka byla odeslána.");
+    } catch {
+      showToast("Odeslání se nezdařilo. Zkuste to znovu.", true);
+    }
+  });
+})();
+</script>
 </body>
 </html>

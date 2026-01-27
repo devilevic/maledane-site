@@ -485,105 +485,23 @@
   <script src="footer-loader.js"></script>
 
   <script src="script.js"></script>
-
   <script>
     (function () {
-      const STORAGE_KEY = "md_contact_submissions_v1";
       const form = document.getElementById("contactForm");
       const toast = document.getElementById("toast");
-      const submissionsWrap = document.getElementById("submissions");
-      const tbody = document.getElementById("submissionsBody");
-      const exportBtn = document.getElementById("exportBtn");
-      const wipeBtn = document.getElementById("wipeBtn");
       const clearFormBtn = document.getElementById("clearFormBtn");
 
-      function nowISO(){ return new Date().toISOString(); }
-      function formatCZ(iso){
-        try{
-          const d = new Date(iso);
-          return d.toLocaleString("cs-CZ", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
-        } catch { return iso; }
-      }
-      function load(){
-        try{ return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }
-        catch{ return []; }
-      }
-      function save(rows){ localStorage.setItem(STORAGE_KEY, JSON.stringify(rows)); }
-      function showToast(msg){
+      function showToast(msg, isError = false) {
         toast.textContent = msg;
         toast.style.display = "block";
+        toast.style.borderColor = isError
+          ? "rgba(255,80,80,.35)"
+          : "rgba(0,210,255,.35)";
+        toast.style.background = isError
+          ? "rgba(255,80,80,.08)"
+          : "rgba(0,210,255,.08)";
         clearTimeout(showToast._t);
-        showToast._t = setTimeout(() => (toast.style.display = "none"), 3200);
-      }
-      function escapeHtml(s){
-        return String(s)
-          .replaceAll("&","&amp;")
-          .replaceAll("<","&lt;")
-          .replaceAll(">","&gt;")
-          .replaceAll('"',"&quot;")
-          .replaceAll("'","&#039;");
-      }
-      function render(){
-        const rows = load();
-        if (!rows.length){
-          submissionsWrap.style.display = "none";
-          tbody.innerHTML = "";
-          return;
-        }
-        submissionsWrap.style.display = "block";
-
-        tbody.innerHTML = rows.slice().reverse().map((r, idxFromEnd) => {
-          const idx = rows.length - 1 - idxFromEnd;
-          const msg = (r.message || "").trim();
-          const msgCell = escapeHtml(msg.length > 160 ? msg.slice(0,160) + "…" : msg);
-
-          return `
-            <tr>
-              <td><small>${escapeHtml(formatCZ(r.createdAt))}</small></td>
-              <td>${escapeHtml(r.name || "")}</td>
-              <td><a href="mailto:${escapeHtml(r.email || "")}">${escapeHtml(r.email || "")}</a></td>
-              <td>${r.phone ? `<a href="tel:${escapeHtml(r.phone)}">${escapeHtml(r.phone)}</a>` : `<small>—</small>`}</td>
-              <td><small>${escapeHtml(r.topic || "")}</small></td>
-              <td>${msgCell}</td>
-              <td style="white-space:nowrap;">
-                <button class="btn btn-ghost" type="button" data-del="${idx}" title="Smazat">
-                  <i class="fa-solid fa-trash" aria-hidden="true"></i>
-                </button>
-              </td>
-            </tr>
-          `;
-        }).join("");
-
-        tbody.querySelectorAll("[data-del]").forEach(btn => {
-          btn.addEventListener("click", () => {
-            const i = Number(btn.getAttribute("data-del"));
-            const rows = load();
-            rows.splice(i, 1);
-            save(rows);
-            render();
-            showToast("Zpráva byla smazána.");
-          });
-        });
-      }
-
-      function toCSV(rows){
-        const header = ["createdAt","name","email","phone","topic","message"];
-        const esc = (v) => `"${String(v ?? "").replaceAll('"','""')}"`;
-        return [
-          header.map(esc).join(","),
-          ...rows.map(r => header.map(k => esc(r[k])).join(","))
-        ].join("\n");
-      }
-      function download(filename, text){
-        const blob = new Blob([text], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
+        showToast._t = setTimeout(() => (toast.style.display = "none"), 3500);
       }
 
       clearFormBtn.addEventListener("click", () => {
@@ -591,45 +509,41 @@
         showToast("Formulář vymazán.");
       });
 
-      exportBtn.addEventListener("click", () => {
-        const rows = load();
-        if (!rows.length) return;
-        download("maledane-kontakty.csv", toCSV(rows));
-      });
-
-      wipeBtn.addEventListener("click", () => {
-        if (!confirm("Smazat všechny uložené zprávy?")) return;
-        save([]);
-        render();
-        showToast("Všechny zprávy smazány.");
-      });
-
-      form.addEventListener("submit", (e) => {
+      form.addEventListener("submit", async (e) => {
         e.preventDefault();
 
-        const name = document.getElementById("name").value.trim();
-        const email = document.getElementById("email").value.trim();
-        const phone = document.getElementById("phone").value.trim();
-        const topic = document.getElementById("topic").value;
-        const message = document.getElementById("message").value.trim();
+        const data = {
+          name: document.getElementById("name").value.trim(),
+          email: document.getElementById("email").value.trim(),
+          phone: document.getElementById("phone").value.trim(),
+          topic: document.getElementById("topic").value,
+          message: document.getElementById("message").value.trim()
+        };
+
         const consent = document.getElementById("consent").checked;
 
-        if (!name || !email || !message || !consent){
-          showToast("Vyplňte prosím povinná pole a potvrďte souhlas.");
+        if (!data.name || !data.email || !data.message || !consent) {
+          showToast("Vyplňte povinná pole a potvrďte souhlas.", true);
           return;
         }
 
-        const rows = load();
-        rows.push({ createdAt: nowISO(), name, email, phone, topic, message });
-        save(rows);
+        try {
+          const res = await fetch("/api/forms/kontakt", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+          });
 
-        form.reset();
-        render();
-        showToast("Děkujeme! Zpráva byla odeslána.");
+          if (!res.ok) throw new Error();
+
+          form.reset();
+          showToast("Děkujeme! Zpráva byla odeslána.");
+        } catch {
+          showToast("Odeslání se nezdařilo. Zkuste to znovu.", true);
+        }
       });
-
-      render();
     })();
   </script>
+  
 </body>
 </html>
