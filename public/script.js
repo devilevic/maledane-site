@@ -81,7 +81,7 @@
 })();
 
 /* ================================
-   AI Chat – memory + STREAMING
+   AI Chat – memory (NON-STREAM)
 ================================ */
 (() => {
   const form = document.getElementById('aiForm');
@@ -120,65 +120,25 @@
     input.disabled = true;
 
     try {
-      const r = await fetch('/api/chat/stream', {
+      const r = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: getRecentHistoryForRequest() })
       });
 
-      if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
 
-      let started = false;
-      let full = '';
+      const data = await r.json();
+      const reply = (data && data.reply ? String(data.reply) : '').trim();
 
-      const reader = r.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let buffer = '';
+      if (!reply) throw new Error('Empty reply');
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+      // Replace typing dots with final answer
+      typingEl.innerHTML = reply;
+      messagesEl.scrollTop = messagesEl.scrollHeight;
 
-        buffer += decoder.decode(value, { stream: true });
-
-        // SSE events separated by blank line
-        const parts = buffer.split('\n\n');
-        buffer = parts.pop() || '';
-
-        for (const part of parts) {
-          const line = part.split('\n').find((l) => l.startsWith('data: '));
-          if (!line) continue;
-
-          const payload = JSON.parse(line.slice(6));
-
-          if (payload.delta) {
-            if (!started) {
-              started = true;
-              typingEl.textContent = ''; // remove dots
-            }
-            full += payload.delta;
-            typingEl.innerHTML = full;
-            messagesEl.scrollTop = messagesEl.scrollHeight;
-          }
-
-          if (payload.done) {
-            const finalText = (full || typingEl.textContent || '').trim();
-            if (finalText) {
-              pushToHistory({ role: 'assistant', content: finalText });
-            }
-          }
-
-          if (payload.error) {
-            throw new Error(payload.error);
-          }
-        }
-      }
-
-      // If stream ended without "done", still save what we have
-      const finalText = (full || typingEl.textContent || '').trim();
-      if (finalText && !historyHasLastAssistant(finalText)) {
-        pushToHistory({ role: 'assistant', content: finalText });
-      }
+      // Save assistant reply to memory
+      pushToHistory({ role: 'assistant', content: reply });
     } catch (err) {
       console.error('Chat request failed:', err);
       typingEl.textContent =
@@ -252,14 +212,5 @@
     hist.forEach((m) => {
       addMessage(m.content, m.role === 'user' ? 'user' : 'bot');
     });
-  }
-
-  function historyHasLastAssistant(text) {
-    for (let i = history.length - 1; i >= 0; i--) {
-      if (history[i].role === 'assistant') {
-        return history[i].content === text;
-      }
-    }
-    return false;
   }
 })();
