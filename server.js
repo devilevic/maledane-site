@@ -370,6 +370,21 @@ function applyFilter(rows, filter){
   return rows.filter(r => (r.status || "new") === filter);
 }
 
+function formatDateTimeCZ(value){
+  if(!value) return "";
+  const d = new Date(value);
+  if(Number.isNaN(d.getTime())) return String(value); // fallback, kdyby to nebyl parsovatelný datum
+
+  const pad = (n) => String(n).padStart(2, "0");
+  const dd = pad(d.getDate());
+  const mm = pad(d.getMonth() + 1);
+  const yyyy = d.getFullYear();
+  const hh = pad(d.getHours());
+  const mi = pad(d.getMinutes());
+
+  return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+}    
+
 function renderTable(el, rows, type, filter){
   const filtered = applyFilter(rows, filter);
 
@@ -397,15 +412,25 @@ function renderTable(el, rows, type, filter){
           return \`
           <tr>
             <td>\${r.id}</td>
-            <td><span class="muted">\${r.created_at}</span></td>
+            <td><span class="muted">${escapeHtml(formatDateTimeCZ(r.created_at))}</span></td>
             <td><span class="badge \${s.cls}">\${s.label}</span></td>
             <td>
-              <div><b>\${escapeHtml(r.name || r.full_name || "")}</b></div>
-              <div class="muted"><a href="mailto:\${escapeHtml(r.email || "")}">\${escapeHtml(r.email || "")}</a></div>
-              \${r.phone ? \`<div class="muted"><a href="tel:\${escapeHtml(r.phone)}">\${escapeHtml(r.phone)}</a></div>\` : \`<div class="muted"></div>\`}
-              \${r.company ? '<div class="muted">' + escapeHtml(r.company) + '</div>' : ''}
-              \${r.topic ? '<div class="muted">' + escapeHtml(r.topic) + '</div>' : ''}
-              \${r.vat ? '<div class="muted">DPH: ' + escapeHtml(r.vat) + '</div>' : ''}
+              <div><span class="muted">Jméno:</span> <b>${escapeHtml(r.name || r.full_name || "")}</b></div>
+
+              <div class="muted">
+                E-mail: <a href="mailto:${escapeHtml(r.email || "")}">${escapeHtml(r.email || "")}</a>
+              </div>
+
+              ${r.phone
+                ? `<div class="muted">Telefon: <a href="tel:${escapeHtml(r.phone)}">${escapeHtml(r.phone)}</a></div>`
+                : `<div class="muted">Telefon: —</div>`
+              }
+
+              ${r.company ? `<div class="muted">Firma: ${escapeHtml(r.company)}</div>` : ""}
+
+              ${r.topic ? `<div class="muted">Téma: ${escapeHtml(r.topic)}</div>` : ""}
+
+              ${r.vat ? `<div class="muted">DPH: ${escapeHtml(r.vat)}</div>` : ""}
             </td>
             <td>
               <details>
