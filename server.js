@@ -264,6 +264,28 @@ app.get("/admin", requireAdmin, (req, res) => {
     }
     .panel-head h2{margin:0;}
     .panel-controls{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-left:12px;}
+  
+    .kv{
+      display:grid;
+      grid-template-columns: 92px 1fr; /* label width */
+      gap:6px 10px;                    /* row gap, column gap */
+      align-items:start;
+    }
+    .kv .k{
+      color:#64748b;                   /* muted label */
+      font-size:12px;
+      text-transform:none;
+      white-space:nowrap;
+    }
+    .kv .v{
+      color:#0f172a;
+      font-size:13px;
+      word-break:break-word;
+    }
+    .kv .v b{
+      font-weight:700;
+    }
+    
   </style>
 </head>
 <body>
@@ -407,22 +429,38 @@ function renderTable(el, rows, type, filter){
             <td><span class="muted">\${escapeHtml(formatDateTimeCZ(r.created_at))}</span></td>
             <td><span class="badge \${s.cls}">\${s.label}</span></td>
             <td>
-              <div><span class="muted">Jméno:</span> <b>\${escapeHtml(r.name || r.full_name || "")}</b></div>
+              <div class="kv">
+                <div class="k">Jméno</div>
+                <div class="v"><b>\${escapeHtml(r.name || r.full_name || "")}</b></div>
 
-              <div class="muted">
-                E-mail: <a href="mailto:\${escapeHtml(r.email || "")}">\${escapeHtml(r.email || "")}</a>
+                <div class="k">E-mail</div>
+                <div class="v">
+                  <a href="mailto:\${escapeHtml(r.email || "")}">\${escapeHtml(r.email || "")}</a>
+                </div>
+
+                <div class="k">Telefon</div>
+                <div class="v">
+                  \${r.phone
+                    ? \`<a href="tel:\${escapeHtml(r.phone)}">\${escapeHtml(r.phone)}</a>\`
+                    : "—"
+                  }
+                </div>
+
+                \${r.company ? \`
+                  <div class="k">Firma</div>
+                  <div class="v">\${escapeHtml(r.company)}</div>
+                \` : ""}
+
+                \${r.topic ? \`
+                  <div class="k">Téma</div>
+                  <div class="v">\${escapeHtml(r.topic)}</div>
+                \` : ""}
+
+                \${r.vat ? \`
+                  <div class="k">DPH</div>
+                  <div class="v">\${escapeHtml(r.vat)}</div>
+                \` : ""}
               </div>
-
-              \${r.phone
-                ? \`<div class="muted">Telefon: <a href="tel:\${escapeHtml(r.phone)}">\${escapeHtml(r.phone)}</a></div>\`
-                : \`<div class="muted">Telefon: —</div>\`
-              }
-
-              \${r.company ? \`<div class="muted">Firma: \${escapeHtml(r.company)}</div>\` : ""}
-
-              \${r.topic ? \`<div class="muted">Téma: \${escapeHtml(r.topic)}</div>\` : ""}
-
-              \${r.vat ? \`<div class="muted">DPH: \${escapeHtml(r.vat)}</div>\` : ""}
             </td>
             <td>
               <details>
