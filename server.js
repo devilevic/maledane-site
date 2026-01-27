@@ -66,6 +66,18 @@ async function initDb() {
     );
   `);
 
+  // NEW: Status columns for admin workflow (new / in_progress / done)
+  async function ensureColumn(table, column, ddl) {
+    const cols = await db.all(`PRAGMA table_info(${table});`);
+    const exists = cols.some((c) => c.name === column);
+    if (!exists) {
+      await db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl};`);
+    }
+  }
+
+  await ensureColumn("kontakt_messages", "status", `status TEXT NOT NULL DEFAULT 'new'`);
+  await ensureColumn("poptavky", "status", `status TEXT NOT NULL DEFAULT 'new'`);
+
   console.log(`✅ SQLite ready at ${DB_PATH}`);
 }
 
@@ -213,9 +225,23 @@ app.get("/admin", requireAdmin, (req, res) => {
     .muted{color:#64748b; font-size:12px;}
     .danger{border-color:#fecaca;}
     .danger:hover{background:#fff1f2;}
+    .btn{border:1px solid #cbd5e1; background:#fff; padding:7px 10px; border-radius:10px; cursor:pointer; font-size:13px;}
+    .btn:hover{background:#f8fafc;}
+    .btn.small{padding:6px 9px; border-radius:10px; font-size:12px;}
+    .btn.primary{border-color:#86efac;}
+    .btn.primary:hover{background:#ecfdf5;}
+    .btn.blue{border-color:#bae6fd;}
+    .btn.blue:hover{background:#eff6ff;}
+    .badge{display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px; border:1px solid #e2e8f0; background:#f8fafc; color:#0f172a;}
+    .badge.new{border-color:#86efac; background:#ecfdf5;}
+    .badge.in_progress{border-color:#93c5fd; background:#eff6ff;}
+    .badge.done{border-color:#e2e8f0; background:#f1f5f9; color:#475569;}
+    .actions{display:flex; gap:8px; flex-wrap:wrap;}
     .grid{display:grid; grid-template-columns: 1fr; gap:22px;}
     @media(min-width: 980px){ .grid{grid-template-columns: 1fr 1fr;} }
     pre{white-space:pre-wrap; word-break:break-word; margin:0;}
+    summary{cursor:pointer;}
+    a{color:inherit;}
   </style>
 </head>
 <body>
@@ -249,46 +275,92 @@ function renderTable(el, rows, type){
     return;
   }
 
+  function statusMeta(s){
+    const v = (s || "new");
+    if(v === "done") return { cls: "done", label: "Vyřízené" };
+    if(v === "in_progress") return { cls: "in_progress", label: "Rozpracované" };
+    return { cls: "new", label: "Nové" };
+  }
+
+  function previewText(txt, n=110){
+    const t = (txt || "").toString().replace(/\\s+/g, " ").trim();
+    if(t.length <= n) return t;
+    return t.slice(0, n - 1) + "…";
+  }
+
   el.innerHTML = \`
     <table>
       <thead>
         <tr>
           <th>ID</th>
           <th>Datum</th>
+          <th>Status</th>
           <th>Kontakt</th>
           <th>Zpráva</th>
           <th>Akce</th>
         </tr>
       </thead>
       <tbody>
-        \${rows.map(r => \`
+        \${rows.map(r => {
+          const s = statusMeta(r.status);
+          const msg = (r.message || "");
+          return \`
           <tr>
             <td>\${r.id}</td>
             <td><span class="muted">\${r.created_at}</span></td>
+            <td><span class="badge \${s.cls}">\${s.label}</span></td>
             <td>
               <div><b>\${escapeHtml(r.name || r.full_name || "")}</b></div>
-              <div class="muted">\${escapeHtml(r.email || "")}</div>
-              <div class="muted">\${escapeHtml(r.phone || "")}</div>
+              <div class="muted"><a href="mailto:\${escapeHtml(r.email || "")}">\${escapeHtml(r.email || "")}</a></div>
+              \${r.phone ? \`<div class="muted"><a href="tel:\${escapeHtml(r.phone)}">\${escapeHtml(r.phone)}</a></div>\` : \`<div class="muted"></div>\`}
               \${r.company ? '<div class="muted">' + escapeHtml(r.company) + '</div>' : ''}
               \${r.topic ? '<div class="muted">' + escapeHtml(r.topic) + '</div>' : ''}
               \${r.vat ? '<div class="muted">DPH: ' + escapeHtml(r.vat) + '</div>' : ''}
             </td>
-            <td><pre>\${escapeHtml(r.message || "")}</pre></td>
             <td>
-              <button class="danger" data-del="\${r.id}" data-type="\${type}">Smazat</button>
+              <details>
+                <summary class="muted">\${escapeHtml(previewText(msg))}</summary>
+                <pre>\${escapeHtml(msg)}</pre>
+              </details>
+            </td>
+            <td>
+              <div class="actions">
+                \${r.status !== "done" ? \`<button class="btn small primary" data-status="done" data-id="\${r.id}" data-type="\${type}">Vyřídit</button>\` : \`\`}
+                \${r.status !== "in_progress" ? \`<button class="btn small blue" data-status="in_progress" data-id="\${r.id}" data-type="\${type}">Rozpracovat</button>\` : \`\`}
+                \${r.status !== "new" ? \`<button class="btn small" data-status="new" data-id="\${r.id}" data-type="\${type}">Zpět na Nové</button>\` : \`\`}
+                <button class="btn small danger" data-del="\${r.id}" data-type="\${type}">Smazat</button>
+              </div>
             </td>
           </tr>
-        \`).join("")}
+          \`;
+        }).join("")}
       </tbody>
     </table>
   \`;
 
+  // Delete
   el.querySelectorAll("button[data-del]").forEach(btn => {
     btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-del");
       const t = btn.getAttribute("data-type");
       if(!confirm("Opravdu smazat ID " + id + "?")) return;
       await fetchJson("/api/admin/" + t + "/" + id, { method: "DELETE" });
+      await loadAll();
+    });
+  });
+
+  // Status update
+  el.querySelectorAll("button[data-status]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-id");
+      const t = btn.getAttribute("data-type");
+      const status = btn.getAttribute("data-status");
+
+      await fetchJson(\`/api/admin/\${t}/\${id}/status\`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status })
+      });
       await loadAll();
     });
   });
@@ -329,7 +401,7 @@ app.get("/api/admin/kontakt", requireAdmin, async (req, res) => {
   try {
     if (!requireDb(req, res)) return;
     const rows = await db.all(
-      `SELECT id, created_at, name, email, phone, topic, message
+      `SELECT id, created_at, status, name, email, phone, topic, message
        FROM kontakt_messages
        ORDER BY id DESC
        LIMIT 500`
@@ -345,7 +417,7 @@ app.get("/api/admin/poptavka", requireAdmin, async (req, res) => {
   try {
     if (!requireDb(req, res)) return;
     const rows = await db.all(
-      `SELECT id, created_at, full_name, company, email, phone, vat, message
+      `SELECT id, created_at, status, full_name, company, email, phone, vat, message
        FROM poptavky
        ORDER BY id DESC
        LIMIT 500`
@@ -353,6 +425,44 @@ app.get("/api/admin/poptavka", requireAdmin, async (req, res) => {
     res.json({ rows });
   } catch (err) {
     console.error("Admin poptavka list error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Update status (Kontakt)
+app.patch("/api/admin/kontakt/:id/status", requireAdmin, async (req, res) => {
+  try {
+    if (!requireDb(req, res)) return;
+    const id = Number(req.params.id);
+    const status = (req.body?.status || "").toString().trim();
+
+    const allowed = new Set(["new", "in_progress", "done"]);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    if (!allowed.has(status)) return res.status(400).json({ error: "Bad status" });
+
+    await db.run(`UPDATE kontakt_messages SET status = ? WHERE id = ?`, [status, id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Admin kontakt status error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Update status (Poptávka)
+app.patch("/api/admin/poptavka/:id/status", requireAdmin, async (req, res) => {
+  try {
+    if (!requireDb(req, res)) return;
+    const id = Number(req.params.id);
+    const status = (req.body?.status || "").toString().trim();
+
+    const allowed = new Set(["new", "in_progress", "done"]);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    if (!allowed.has(status)) return res.status(400).json({ error: "Bad status" });
+
+    await db.run(`UPDATE poptavky SET status = ? WHERE id = ?`, [status, id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Admin poptavka status error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
