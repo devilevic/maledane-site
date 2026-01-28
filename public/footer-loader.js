@@ -54,7 +54,7 @@
 
   <div class="container footer-bottom">
     <span class="muted2">© 2026 Malé Daně s.r.o. | </span>
-    <span class="muted2">Web &amp; design: <a href="https://www.semlin.eu">semlin.eu</a></span>
+    <span class="muted2">Web &amp; design: <a href="https://www.semlin.eu" target="_blank">semlin.eu</a></span>
   </div>
 </footer>
 `.trim();
